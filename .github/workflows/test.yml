@@ -78,7 +78,7 @@ jobs:
           git apply "$RUNNER_TEMP/tests.patch"
           git diff --exit-code
           set +e
-          (cd packages/tui && bun test --timeout 30000 --only-failures test/prompt/shell-submit.test.ts --test-name-pattern "rejected existing-session shell preserves newer draft: false") > "$RUNNER_TEMP/proof/baseline.log" 2>&1
+          (cd packages/tui && bun test --timeout 30000 --only-failures test/prompt/shell-submit.test.ts) > "$RUNNER_TEMP/proof/baseline.log" 2>&1
           result=$?
           set -e
           cat "$RUNNER_TEMP/proof/baseline.log"
@@ -90,7 +90,7 @@ jobs:
           assert 'shell fixture unhandled rejection' in text
           observations = [json.loads(value) for value in re.findall(r'SHELL_ADMISSION_OBSERVATION (\{[^\n]+\})', text)]
           assert any(row == {'command': 'printf shell-admission-fixture', 'newerDraft': False, 'draft': '', 'unhandled': True, 'status': 400} for row in observations)
-          assert 'Expected' in text and 'Received' in text and '1 fail' in text
+          assert 'Expected' in text and 'Received' in text and '2 fail' in text
           assert 'Test timed out' not in text and 'Cannot find module' not in text and 'ModuleNotFound' not in text
           PY
           rm packages/tui/test/prompt/shell-submit.test.ts
