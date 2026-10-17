@@ -1,0 +1,197 @@
+name: qualify-catalog-delta-55529
+on:
+  workflow_dispatch:
+    inputs:
+      patch_base64:
+        required: true
+        type: string
+      patch_sha256:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  native:
+    if: github.repository == 'rudycelekli/opencode'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      GITHUB_ACTIONS: 'false'
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          repository: anomalyco/opencode
+          ref: 8c173a8f3805d8e749d44311054b07e37a1b2ce1
+          persist-credentials: false
+      - name: Guard exact reviewed patch and paths
+        env:
+          PATCH_BASE64: ${{ inputs.patch_base64 }}
+          PATCH_SHA256: ${{ inputs.patch_sha256 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/proof"
+          test "$(git rev-parse HEAD)" = 8c173a8f3805d8e749d44311054b07e37a1b2ce1
+          python3 - <<'PY'
+          import base64, hashlib, os, pathlib, subprocess
+          data = base64.b64decode(os.environ['PATCH_BASE64'], validate=True)
+          expected = '450b0ba8f05231b0c4ce483707458539cef7ec9035390be6d5abf65c6ab3b8e2'
+          assert os.environ['PATCH_SHA256'] == expected
+          assert hashlib.sha256(data).hexdigest() == expected
+          root = pathlib.Path(os.environ['RUNNER_TEMP'])
+          patch = root / 'candidate.patch'
+          patch.write_bytes(data)
+          allowed = {'packages/core/src/codemode/instructions.ts', 'packages/core/test/codemode/catalog-updates.test.ts'}
+          rows = subprocess.check_output(['git', 'apply', '--numstat', str(patch)], text=True).splitlines()
+          assert len(rows) == 2 and {r.split('\t')[2] for r in rows} == allowed
+          blocks = data.decode().split('diff --git ')[1:]
+          tests = [b for b in blocks if b.startswith('a/packages/core/test/codemode/catalog-updates.test.ts b/packages/core/test/codemode/catalog-updates.test.ts\n')]
+          assert len(tests) == 1
+          (root / 'tests.patch').write_text('diff --git ' + tests[0])
+          subprocess.run(['git', 'apply', '--check', str(patch)], check=True)
+          (root / 'proof/patch.sha256').write_text(expected + '\n')
+          PY
+      - name: Setup upstream pinned Bun and dependencies
+        uses: ./.github/actions/setup-bun
+      - name: Capture exact toolchain
+        run: |
+          set -euo pipefail
+          test "$(bun --version)" = "$(node -p "require('./package.json').packageManager.split('@')[1]")"
+          git rev-parse HEAD > "$RUNNER_TEMP/proof/base.txt"
+          bun --version > "$RUNNER_TEMP/proof/bun-version.txt"
+          git config --global user.email 'bot@opencode.ai'
+          git config --global user.name 'opencode'
+      - name: Prepare verified native ripgrep before test network guards
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/native-tools"
+          curl --fail --location --max-time 120 https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-unknown-linux-musl.tar.gz --output "$RUNNER_TEMP/ripgrep.tar.gz"
+          echo "1c9297be4a084eea7ecaedf93eb03d058d6faae29bbc57ecdaf5063921491599  $RUNNER_TEMP/ripgrep.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/ripgrep.tar.gz" --strip-components=1 -C "$RUNNER_TEMP/native-tools" ripgrep-15.1.0-x86_64-unknown-linux-musl/rg
+          "$RUNNER_TEMP/native-tools/rg" --version | tee "$RUNNER_TEMP/proof/ripgrep-version.txt"
+          echo "$RUNNER_TEMP/native-tools" >> "$GITHUB_PATH"
+      - name: Actual baseline must fail the new semantic assertion
+        id: baseline_semantic
+        run: |
+          set -euo pipefail
+          git apply "$RUNNER_TEMP/tests.patch"
+          git diff --exit-code -- packages/core/src/codemode/instructions.ts
+          set +e
+          (cd packages/core && bun run script/test.ts test/codemode/catalog-updates.test.ts) > "$RUNNER_TEMP/proof/baseline.log" 2>&1
+          result=$?
+          set -e
+          cat "$RUNNER_TEMP/proof/baseline.log"
+          test "$result" -ne 0
+          python3 - <<'PY'
+          import os, pathlib
+          text = (pathlib.Path(os.environ['RUNNER_TEMP']) / 'proof/baseline.log').read_text()
+          assert 'browser attachment churn emits a bounded instruction delta' in text
+          assert 'Expected to not contain:' in text and '## Available tools' in text
+          assert 'Received:' in text and '1 fail' in text and '2 pass' in text
+          assert 'Cannot find' not in text and 'error: ModuleNotFound' not in text
+          PY
+          python3 - <<'PY'
+          import pathlib
+          pathlib.Path('packages/core/test/codemode/catalog-updates.test.ts').unlink()
+          PY
+      - name: Pristine baseline full Core suite
+        run: |
+          set -euo pipefail
+          test "$(command -v rg)" = "$RUNNER_TEMP/native-tools/rg"
+          (cd packages/core && bun run test) 2>&1 | tee "$RUNNER_TEMP/proof/baseline-core.log"
+      - name: Apply exact candidate
+        id: candidate_apply
+        if: always() && steps.baseline_semantic.outcome == 'success'
+        run: |
+          set -euo pipefail
+          git apply "$RUNNER_TEMP/candidate.patch"
+          git diff --check
+          git diff > "$RUNNER_TEMP/proof/candidate.patch"
+          sha256sum packages/core/src/codemode/instructions.ts packages/core/test/codemode/catalog-updates.test.ts > "$RUNNER_TEMP/proof/source-sha256.txt"
+      - name: Initial full-index reviewed identity before tests
+        id: preflight_identity
+        if: always() && steps.candidate_apply.outcome == 'success'
+        env:
+          IDENTITY_PHASE: preflight
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,stat,subprocess
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])/'proof'
+          phase=os.environ.get('IDENTITY_PHASE','final')
+          canonical=subprocess.check_output(['git','diff','--binary','--full-index'])
+          untracked=subprocess.check_output(['git','ls-files','--others','--exclude-standard'],text=True).splitlines()
+          for file in untracked:
+           result=subprocess.run(['git','diff','--no-index','--binary','--full-index','--','/dev/null',file],capture_output=True)
+           assert result.returncode==1
+           canonical+=result.stdout
+          (root/(phase+'.patch')).write_bytes(canonical)
+          (root/(phase+'-status.txt')).write_text(subprocess.check_output(['git','status','--porcelain=v1','-uall'],text=True))
+          paths=subprocess.check_output(['git','diff','--name-only'],text=True).splitlines()+untracked
+          files={}
+          for name in sorted(set(paths)):
+           p=pathlib.Path(name)
+           files[name]={'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'mode':oct(stat.S_IMODE(p.stat().st_mode))}if p.exists()else{'deleted':True}
+          (root/(phase+'-source-files.json')).write_text(json.dumps(files,indent=2))
+          actual=hashlib.sha256(canonical).hexdigest()
+          expected=hashlib.sha256((pathlib.Path(os.environ['RUNNER_TEMP'])/'candidate.patch').read_bytes()).hexdigest()
+          (root/(phase+'-identity.json')).write_text(json.dumps({'actual':actual,'expected':expected},indent=2))
+          assert actual==expected, 'reviewed full-index identity mismatch; diagnostics retained'
+          subprocess.run(['git','diff','--check'],check=True)
+          PY
+      - name: Candidate focused native tests
+        if: always() && steps.candidate_apply.outcome == 'success' && steps.preflight_identity.outcome == 'success'
+        run: |
+          set -euo pipefail
+          (cd packages/core && bun run script/test.ts test/codemode/catalog-updates.test.ts test/codemode/catalog.test.ts --rerun-each 10) 2>&1 | tee "$RUNNER_TEMP/proof/focused.log"
+      - name: Candidate full Core suite
+        if: always() && steps.candidate_apply.outcome == 'success' && steps.preflight_identity.outcome == 'success'
+        run: |
+          set -euo pipefail
+          (cd packages/core && bun run test) 2>&1 | tee "$RUNNER_TEMP/proof/core.log"
+      - name: Candidate Core typecheck
+        if: always() && steps.candidate_apply.outcome == 'success' && steps.preflight_identity.outcome == 'success'
+        run: |
+          set -euo pipefail
+          (cd packages/core && bun typecheck) 2>&1 | tee "$RUNNER_TEMP/proof/core-typecheck.log"
+      - name: Canonical repository check
+        if: always() && steps.candidate_apply.outcome == 'success' && steps.preflight_identity.outcome == 'success'
+        run: |
+          set -euo pipefail
+          bun run check 2>&1 | tee "$RUNNER_TEMP/proof/check.log"
+      - name: Verify retained source identity
+        if: always() && steps.candidate_apply.outcome == 'success'
+        run: |
+          set -euo pipefail
+          sha256sum -c "$RUNNER_TEMP/proof/source-sha256.txt"
+          git diff --check
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,stat,subprocess
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])/'proof'
+          phase=os.environ.get('IDENTITY_PHASE','final')
+          canonical=subprocess.check_output(['git','diff','--binary','--full-index'])
+          untracked=subprocess.check_output(['git','ls-files','--others','--exclude-standard'],text=True).splitlines()
+          for file in untracked:
+           result=subprocess.run(['git','diff','--no-index','--binary','--full-index','--','/dev/null',file],capture_output=True)
+           assert result.returncode==1
+           canonical+=result.stdout
+          (root/(phase+'.patch')).write_bytes(canonical)
+          (root/(phase+'-status.txt')).write_text(subprocess.check_output(['git','status','--porcelain=v1','-uall'],text=True))
+          paths=subprocess.check_output(['git','diff','--name-only'],text=True).splitlines()+untracked
+          files={}
+          for name in sorted(set(paths)):
+           p=pathlib.Path(name)
+           files[name]={'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'mode':oct(stat.S_IMODE(p.stat().st_mode))}if p.exists()else{'deleted':True}
+          (root/(phase+'-source-files.json')).write_text(json.dumps(files,indent=2))
+          actual=hashlib.sha256(canonical).hexdigest()
+          expected=hashlib.sha256((pathlib.Path(os.environ['RUNNER_TEMP'])/'candidate.patch').read_bytes()).hexdigest()
+          (root/(phase+'-identity.json')).write_text(json.dumps({'actual':actual,'expected':expected},indent=2))
+          assert actual==expected, 'reviewed full-index identity mismatch; diagnostics retained'
+          subprocess.run(['git','diff','--check'],check=True)
+          PY
+      - name: Retain native evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: catalog-native-evidence
+          path: ${{ runner.temp }}/proof
+          if-no-files-found: error
