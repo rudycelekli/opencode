@@ -1,4 +1,4 @@
-name: qualify-copilot-free-models-v2
+name: qualify-history-workspace-v1
 on:
   workflow_dispatch:
     inputs:
@@ -18,6 +18,7 @@ jobs:
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
       GITHUB_ACTIONS: 'false'
+      NO_COLOR: '1'
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
@@ -35,17 +36,17 @@ jobs:
           python3 - <<'PY'
           import base64, hashlib, os, pathlib, subprocess
           data = base64.b64decode(os.environ['PATCH_BASE64'], validate=True)
-          expected = '44a3cbcc373e178bfcef2477a9e7f08e5b214fc0b162656f65a0d12f75d5bfff'
+          expected = '715a0d838299e0480cf052d93ce7e25ae0c34bdc3033fa428bd61a2cfae5f3af'
           assert os.environ['PATCH_SHA256'] == expected
           assert hashlib.sha256(data).hexdigest() == expected
           root = pathlib.Path(os.environ['RUNNER_TEMP'])
           patch = root / 'candidate.patch'
           patch.write_bytes(data)
-          allowed = {'packages/core/src/github-copilot/models.ts', 'packages/core/test/github-copilot/models.test.ts'}
+          allowed = {'packages/tui/src/component/prompt/index.tsx', 'packages/tui/test/prompt/history-workspace.test.ts', 'packages/tui/test/prompt/history.test.ts', 'packages/tui/src/prompt/history.tsx', 'packages/tui/src/component/prompt/autocomplete.tsx'}
           rows = subprocess.check_output(['git', 'apply', '--numstat', str(patch)], text=True).splitlines()
-          assert len(rows) == 2 and {r.split('\t')[2] for r in rows} == allowed
+          assert len(rows) == 5 and {r.split('\t')[2] for r in rows} == allowed
           blocks = data.decode().split('diff --git ')[1:]
-          tests = [b for b in blocks if b.startswith('a/packages/core/test/github-copilot/models.test.ts b/packages/core/test/github-copilot/models.test.ts\n')]
+          tests = [b for b in blocks if b.startswith('a/packages/tui/test/prompt/history-workspace.test.ts b/packages/tui/test/prompt/history-workspace.test.ts\n')]
           assert len(tests) == 1
           (root / 'tests.patch').write_text('diff --git ' + tests[0])
           subprocess.run(['git', 'apply', '--check', str(patch)], check=True)
@@ -75,9 +76,9 @@ jobs:
         run: |
           set -euo pipefail
           git apply "$RUNNER_TEMP/tests.patch"
-          git diff --exit-code -- packages/core/src/github-copilot/models.ts
+          git diff --exit-code
           set +e
-          (cd packages/core && bun run script/test.ts test/github-copilot/models.test.ts) > "$RUNNER_TEMP/proof/baseline.log" 2>&1
+          (cd packages/tui && bun test --timeout 30000 --only-failures test/prompt/history-workspace.test.ts --test-name-pattern "history submits workspace-relative files from the destination workspace") > "$RUNNER_TEMP/proof/baseline.log" 2>&1
           result=$?
           set -e
           cat "$RUNNER_TEMP/proof/baseline.log"
@@ -85,40 +86,38 @@ jobs:
           python3 - <<'PY'
           import os, pathlib
           text = (pathlib.Path(os.environ['RUNNER_TEMP']) / 'proof/baseline.log').read_text()
-          assert 'keeps policy-enabled Copilot Free models available when the picker is disabled' in text
-          assert 'Expected: true' in text and 'Received: false' in text
+          assert 'history submits workspace-relative files from the destination workspace' in text
+          assert 'Expected' in text and 'Received' in text
+          assert 'workspace-a' in text and 'workspace-b' in text
+          assert 'content A' in text and 'content B' in text
           assert '1 fail' in text
           PY
-          git restore packages/core/test/github-copilot/models.test.ts
-      - name: Pristine baseline full Core suite
-        run: |
-          set -euo pipefail
-          test "$(command -v rg)" = "$RUNNER_TEMP/native-tools/rg"
-          (cd packages/core && bun run test) 2>&1 | tee "$RUNNER_TEMP/proof/baseline-core.log"
+          rm packages/tui/test/prompt/history-workspace.test.ts
       - name: Apply exact candidate
         id: candidate_apply
         if: always() && steps.baseline_semantic.outcome == 'success'
         run: |
           set -euo pipefail
           git apply "$RUNNER_TEMP/candidate.patch"
+          git add -N packages/tui/test/prompt/history-workspace.test.ts
           git diff --check
           git diff > "$RUNNER_TEMP/proof/candidate.patch"
-          sha256sum packages/core/src/github-copilot/models.ts packages/core/test/github-copilot/models.test.ts > "$RUNNER_TEMP/proof/source-sha256.txt"
+          sha256sum packages/tui/src/component/prompt/autocomplete.tsx packages/tui/src/component/prompt/index.tsx packages/tui/src/prompt/history.tsx packages/tui/test/prompt/history-workspace.test.ts packages/tui/test/prompt/history.test.ts > "$RUNNER_TEMP/proof/source-sha256.txt"
       - name: Candidate focused native tests
         if: always() && steps.candidate_apply.outcome == 'success'
         run: |
           set -euo pipefail
-          (cd packages/core && bun run script/test.ts test/github-copilot/models.test.ts test/plugin/provider-github-copilot.test.ts) 2>&1 | tee "$RUNNER_TEMP/proof/focused.log"
-      - name: Candidate full Core suite
+          (cd packages/tui && bun test --timeout 30000 --only-failures test/prompt/history.test.ts test/prompt/history-provider.test.tsx test/prompt/history-workspace.test.ts) 2>&1 | tee "$RUNNER_TEMP/proof/focused.log"
+      - name: Candidate full TUI suite
         if: always() && steps.candidate_apply.outcome == 'success'
         run: |
           set -euo pipefail
-          (cd packages/core && bun run test) 2>&1 | tee "$RUNNER_TEMP/proof/core.log"
-      - name: Candidate Core typecheck
+          (cd packages/tui && bun run test) 2>&1 | tee "$RUNNER_TEMP/proof/tui.log"
+      - name: Candidate TUI typecheck
         if: always() && steps.candidate_apply.outcome == 'success'
         run: |
           set -euo pipefail
-          (cd packages/core && bun typecheck) 2>&1 | tee "$RUNNER_TEMP/proof/core-typecheck.log"
+          (cd packages/tui && bun typecheck) 2>&1 | tee "$RUNNER_TEMP/proof/tui-typecheck.log"
       - name: Canonical repository check
         if: always() && steps.candidate_apply.outcome == 'success'
         run: |
@@ -136,6 +135,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: copilot-native-evidence
+          name: history-native-evidence
           path: ${{ runner.temp }}/proof
           if-no-files-found: error
