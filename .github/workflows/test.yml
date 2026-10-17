@@ -1,4 +1,4 @@
-name: qualify-history-workspace-v1
+name: qualify-history-workspace-v2
 on:
   workflow_dispatch:
     inputs:
@@ -36,7 +36,7 @@ jobs:
           python3 - <<'PY'
           import base64, hashlib, os, pathlib, subprocess
           data = base64.b64decode(os.environ['PATCH_BASE64'], validate=True)
-          expected = '715a0d838299e0480cf052d93ce7e25ae0c34bdc3033fa428bd61a2cfae5f3af'
+          expected = '11ce7384ab511505990da7de2ca1ca33958b125a88d2279723f5a494e44d58b1'
           assert os.environ['PATCH_SHA256'] == expected
           assert hashlib.sha256(data).hexdigest() == expected
           root = pathlib.Path(os.environ['RUNNER_TEMP'])
