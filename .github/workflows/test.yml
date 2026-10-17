@@ -1,4 +1,4 @@
-name: qualify-shell-submit-v1
+name: qualify-shell-submit-v5
 on:
   workflow_dispatch:
     inputs:
@@ -36,7 +36,7 @@ jobs:
           python3 - <<'PY'
           import base64, hashlib, os, pathlib, subprocess
           data = base64.b64decode(os.environ['PATCH_BASE64'], validate=True)
-          expected = 'b4ba20d78d34b3adfc6b812a54ef525e9c647a742d2973ae0e0415cbbf6e9259'
+          expected = '1f0f3fa37af7adc829862e465295455d65e9f5002ab44ff2c4c9350f3f07fe47'
           assert os.environ['PATCH_SHA256'] == expected
           assert hashlib.sha256(data).hexdigest() == expected
           root = pathlib.Path(os.environ['RUNNER_TEMP'])
@@ -87,11 +87,14 @@ jobs:
           import os, pathlib
           text = (pathlib.Path(os.environ['RUNNER_TEMP']) / 'proof/baseline.log').read_text()
           import json, re
-          assert 'shell fixture unhandled rejection' in text
-          observations = [json.loads(value) for value in re.findall(r'SHELL_ADMISSION_OBSERVATION (\{[^\n]+\})', text)]
-          assert any(row == {'command': 'printf shell-admission-fixture', 'newerDraft': False, 'draft': '', 'unhandled': True, 'status': 400} for row in observations)
-          assert 'Expected' in text and 'Received' in text and '2 fail' in text
-          assert 'Test timed out' not in text and 'Cannot find module' not in text and 'ModuleNotFound' not in text
+          requests = [json.loads(value) for value in re.findall(r'SHELL_ADMISSION_REQUEST (\{[^\n]+\})', text)]
+          assert {'command': 'printf shell-admission-fixture', 'newerDraft': False, 'draft': '', 'status': 400} in requests
+          assert {'command': 'printf shell-admission-fixture', 'newerDraft': True, 'draft': 'newer unsent draft', 'status': 400} in requests
+          replies = [json.loads(value) for value in re.findall(r'SHELL_ADMISSION_HTTP_RESPONSE (\{[^\n]+\})', text)]
+          assert len(replies)==2 and all(row['status']==400 for row in replies)
+          assert text.count('error: shell admission rejected')==2 and '/promise/generated/client.ts:' in text
+          assert '0 pass' in text and '2 fail' in text
+          assert not re.search(r'timed?\s*out|timeout|cannot\s+find\s+(?:module|package)|modulenotfound|module.?not.?found|error\s+TS\d+|syntaxerror|failed\s+to\s+(?:resolve|import)', text, re.IGNORECASE)
           PY
           rm packages/tui/test/prompt/shell-submit.test.ts
       - name: Apply exact candidate
