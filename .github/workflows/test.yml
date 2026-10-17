@@ -1,4 +1,4 @@
-name: qualify-gateway-overflow-review-v2
+name: qualify-gemini-tool-images-55694
 on:
   workflow_dispatch:
     inputs:
@@ -36,18 +36,18 @@ jobs:
           python3 - <<'PY'
           import base64, hashlib, os, pathlib, subprocess
           data = base64.b64decode(os.environ['PATCH_BASE64'], validate=True)
-          expected = 'da13a6f50f97d04521d25a022438b7f0f7f8fe50d954fc3c13b614e32f03e9e5'
+          expected = '2c8af497f11e2702944a7aaf4d42af303517a5c385238a1894b4a94a8480c461'
           assert os.environ['PATCH_SHA256'] == expected
           assert hashlib.sha256(data).hexdigest() == expected
           root = pathlib.Path(os.environ['RUNNER_TEMP'])
           patch = root / 'candidate.patch'
           patch.write_bytes(data)
-          allowed = {'packages/ai/src/provider-error.ts', 'packages/ai/test/provider-error.test.ts'}
+          allowed = {'packages/ai/src/protocols/openai-chat.ts', 'packages/ai/test/provider/openrouter.test.ts'}
           rows = subprocess.check_output(['git', 'apply', '--numstat', str(patch)], text=True).splitlines()
           assert len(rows) == 2 and {r.split('\t')[2] for r in rows} == allowed
           assert not subprocess.check_output(['git','status','--porcelain'],text=True).strip()
           blocks = data.decode().split('diff --git ')[1:]
-          tests = [b for b in blocks if any(b.startswith('a/'+name+' b/'+name+'\n') for name in ['packages/ai/test/provider-error.test.ts'])]
+          tests = [b for b in blocks if any(b.startswith('a/'+name+' b/'+name+'\n') for name in ['packages/ai/test/provider/openrouter.test.ts'])]
           assert len(tests) == 1
           (root / 'tests.patch').write_text(''.join('diff --git '+b for b in tests))
           subprocess.run(['git', 'apply', '--check', str(patch)], check=True)
@@ -58,7 +58,8 @@ jobs:
       - name: Capture exact toolchain
         run: |
           set -euo pipefail
-          test "$(bun --version)" = "$(node -p "require('./package.json').packageManager.split('@')[1]")"
+          test "$(bun --version)" = "1.4.2"
+          test "$(node -p "require('./package.json').packageManager.split('@')[1]")" = "1.4.2"
           git rev-parse HEAD > "$RUNNER_TEMP/proof/base.txt"
           bun --version > "$RUNNER_TEMP/proof/bun-version.txt"
           git config --global user.email 'bot@opencode.ai'
@@ -72,26 +73,37 @@ jobs:
           tar -xzf "$RUNNER_TEMP/ripgrep.tar.gz" --strip-components=1 -C "$RUNNER_TEMP/native-tools" ripgrep-15.1.0-x86_64-unknown-linux-musl/rg
           "$RUNNER_TEMP/native-tools/rg" --version | tee "$RUNNER_TEMP/proof/ripgrep-version.txt"
           echo "$RUNNER_TEMP/native-tools" >> "$GITHUB_PATH"
-      - name: Actual baseline classifier assertion
+      - name: Actual baseline image-only continuation assertion
         id: baseline_semantic
         run: |
           set -euo pipefail
           git apply "$RUNNER_TEMP/tests.patch"
           set +e
-          (cd packages/ai && bun test --timeout 30000 --only-failures test/provider-error.test.ts) > "$RUNNER_TEMP/proof/baseline.log" 2>&1
+          (cd packages/ai && bun test --timeout 30000 test/provider/openrouter.test.ts -t 'anchors Gemini|explicit Gemini|non-Gemini OpenRouter') > "$RUNNER_TEMP/proof/baseline.log" 2>&1
           result=$?
           set -e
           cat "$RUNNER_TEMP/proof/baseline.log"
           test "$result" -eq 1
           python3 - <<'PY'
-          import os,pathlib
-          text=(pathlib.Path(os.environ['RUNNER_TEMP'])/'proof/baseline.log').read_text()
-          assert '37 pass' in text and '1 fail' in text
-          assert '(fail) provider error classification > classifies OpenCode Go configured input limits' in text
-          assert 'Expected' in text and 'Received' in text and 'context-overflow' in text and "configured input limit" in text
-          assert all(marker not in text for marker in ['Cannot find module','ModuleNotFound','Test timed out','SyntaxError','error TS'])
+          import os, pathlib, re
+          text = (pathlib.Path(os.environ['RUNNER_TEMP']) / 'proof/baseline.log').read_text()
+          text = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', text)
+          def exact(pattern, expected):
+              assert re.findall(pattern, text, re.MULTILINE) == expected
+          exact(r'^\s*(\d+) pass\s*$', ['2'])
+          exact(r'^\s*(\d+) fail\s*$', ['1'])
+          exact(r'^Ran (\d+) tests across (\d+) file\. \[.*\]$', [('3', '1')])
+          exact(r'^\s*(\d+) expect\(\) calls\s*$', ['6'])
+          failed = re.findall(r'^\(fail\) (.*?) \[[^\n]*\]$', text, re.MULTILINE)
+          assert failed == ['OpenRouter > anchors Gemini tool images with text while preserving encrypted reasoning']
+          passed = re.findall(r'^\(pass\) (.*?) \[[^\n]*\]$', text, re.MULTILINE)
+          assert set(passed) == {'OpenRouter > keeps explicit Gemini user images unchanged', 'OpenRouter > keeps non-Gemini OpenRouter tool images unchanged'} and len(passed) == 2
+          assert '-       "text": "Attached media from tool result:",' in text
+          assert re.search(r'^- Expected\s+- 4$', text, re.MULTILINE)
+          assert re.search(r'^\+ Received\s+\+ 0$', text, re.MULTILINE)
+          assert all(marker.lower() not in text.lower() for marker in ['Cannot find module', 'ModuleNotFound', 'Test timed out', 'SyntaxError', 'error TS', 'Unhandled error between tests', 'failed to resolve', 'connection refused'])
           PY
-          git restore -- packages/ai/test/provider-error.test.ts
+          git restore -- packages/ai/test/provider/openrouter.test.ts
           git diff --exit-code
       - name: Apply candidate and verify initial full-index identity
         id: candidate_apply
@@ -103,12 +115,12 @@ jobs:
           git diff --binary --full-index > "$RUNNER_TEMP/proof/initial-full-index.patch"
           cmp "$RUNNER_TEMP/candidate.patch" "$RUNNER_TEMP/proof/initial-full-index.patch"
           test -z "$(git ls-files --others --exclude-standard)"
-          sha256sum packages/ai/src/provider-error.ts packages/ai/test/provider-error.test.ts > "$RUNNER_TEMP/proof/source-sha256.txt"
-      - name: Focused classifier tests
+          sha256sum packages/ai/src/protocols/openai-chat.ts packages/ai/test/provider/openrouter.test.ts > "$RUNNER_TEMP/proof/source-sha256.txt"
+      - name: Focused provider protocol tests
         if: always() && steps.candidate_apply.outcome == 'success'
         run: |
           set -euo pipefail
-          (cd packages/ai && bun test --timeout 30000 --only-failures test/provider-error.test.ts) 2>&1 | tee "$RUNNER_TEMP/proof/focused.log"
+          (cd packages/ai && bun test --timeout 30000 --only-failures test/provider/openrouter.test.ts test/provider/openai-chat.test.ts) 2>&1 | tee "$RUNNER_TEMP/proof/focused.log"
       - name: Full AI replay tests
         if: always() && steps.candidate_apply.outcome == 'success'
         run: |
@@ -148,6 +160,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: gateway-overflow-native-evidence
+          name: gemini-tool-images-native-evidence
           path: ${{ runner.temp }}/proof
           if-no-files-found: error
