@@ -104,7 +104,7 @@
           "uses": "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
           "with": {
             "name": "contribution-${{ inputs.case }}-${{ runner.os }}-${{ github.run_id }}",
-            "path": "${{ runner.temp }}/contribution-proof",
+            "path": "${{ runner.temp }}/contribution-proof/*.json\n${{ runner.temp }}/contribution-proof/*.log\n${{ runner.temp }}/contribution-proof/*.patch\n${{ runner.temp }}/contribution-proof/*.html\n${{ runner.temp }}/contribution-proof/*.ts",
             "if-no-files-found": "error"
           }
         }
