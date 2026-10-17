@@ -1,4 +1,4 @@
-name: qualify-shell-submit-review-regression
+name: qualify-gateway-overflow-review-v2
 on:
   workflow_dispatch:
     inputs:
@@ -36,19 +36,20 @@ jobs:
           python3 - <<'PY'
           import base64, hashlib, os, pathlib, subprocess
           data = base64.b64decode(os.environ['PATCH_BASE64'], validate=True)
-          expected = '9bf6db9efff45d2fea33806b92a51897f4d8b96e2e57d739e5bee35fbbe28fae'
+          expected = 'da13a6f50f97d04521d25a022438b7f0f7f8fe50d954fc3c13b614e32f03e9e5'
           assert os.environ['PATCH_SHA256'] == expected
           assert hashlib.sha256(data).hexdigest() == expected
           root = pathlib.Path(os.environ['RUNNER_TEMP'])
           patch = root / 'candidate.patch'
           patch.write_bytes(data)
-          allowed = {'packages/tui/src/component/prompt/index.tsx', 'packages/tui/test/prompt/shell-submit.test.ts'}
+          allowed = {'packages/ai/src/provider-error.ts', 'packages/ai/test/provider-error.test.ts'}
           rows = subprocess.check_output(['git', 'apply', '--numstat', str(patch)], text=True).splitlines()
           assert len(rows) == 2 and {r.split('\t')[2] for r in rows} == allowed
+          assert not subprocess.check_output(['git','status','--porcelain'],text=True).strip()
           blocks = data.decode().split('diff --git ')[1:]
-          tests = [b for b in blocks if b.startswith('a/packages/tui/test/prompt/shell-submit.test.ts b/packages/tui/test/prompt/shell-submit.test.ts\n')]
+          tests = [b for b in blocks if any(b.startswith('a/'+name+' b/'+name+'\n') for name in ['packages/ai/test/provider-error.test.ts'])]
           assert len(tests) == 1
-          (root / 'tests.patch').write_text('diff --git ' + tests[0])
+          (root / 'tests.patch').write_text(''.join('diff --git '+b for b in tests))
           subprocess.run(['git', 'apply', '--check', str(patch)], check=True)
           (root / 'proof/patch.sha256').write_text(expected + '\n')
           PY
@@ -71,47 +72,82 @@ jobs:
           tar -xzf "$RUNNER_TEMP/ripgrep.tar.gz" --strip-components=1 -C "$RUNNER_TEMP/native-tools" ripgrep-15.1.0-x86_64-unknown-linux-musl/rg
           "$RUNNER_TEMP/native-tools/rg" --version | tee "$RUNNER_TEMP/proof/ripgrep-version.txt"
           echo "$RUNNER_TEMP/native-tools" >> "$GITHUB_PATH"
-      - name: Apply exact candidate
+      - name: Actual baseline classifier assertion
+        id: baseline_semantic
+        run: |
+          set -euo pipefail
+          git apply "$RUNNER_TEMP/tests.patch"
+          set +e
+          (cd packages/ai && bun test --timeout 30000 --only-failures test/provider-error.test.ts) > "$RUNNER_TEMP/proof/baseline.log" 2>&1
+          result=$?
+          set -e
+          cat "$RUNNER_TEMP/proof/baseline.log"
+          test "$result" -eq 1
+          python3 - <<'PY'
+          import os,pathlib
+          text=(pathlib.Path(os.environ['RUNNER_TEMP'])/'proof/baseline.log').read_text()
+          assert '37 pass' in text and '1 fail' in text
+          assert '(fail) provider error classification > classifies OpenCode Go configured input limits' in text
+          assert 'Expected' in text and 'Received' in text and 'context-overflow' in text and "configured input limit" in text
+          assert all(marker not in text for marker in ['Cannot find module','ModuleNotFound','Test timed out','SyntaxError','error TS'])
+          PY
+          git restore -- packages/ai/test/provider-error.test.ts
+          git diff --exit-code
+      - name: Apply candidate and verify initial full-index identity
         id: candidate_apply
+        if: always() && steps.baseline_semantic.outcome == 'success'
         run: |
           set -euo pipefail
           git apply "$RUNNER_TEMP/candidate.patch"
-          git add -N packages/tui/test/prompt/shell-submit.test.ts
           git diff --check
-          git diff --full-index > "$RUNNER_TEMP/proof/candidate.patch"
-          sha256sum packages/tui/src/component/prompt/index.tsx packages/tui/test/prompt/shell-submit.test.ts > "$RUNNER_TEMP/proof/source-sha256.txt"
-      - name: Candidate focused native tests
+          git diff --binary --full-index > "$RUNNER_TEMP/proof/initial-full-index.patch"
+          cmp "$RUNNER_TEMP/candidate.patch" "$RUNNER_TEMP/proof/initial-full-index.patch"
+          test -z "$(git ls-files --others --exclude-standard)"
+          sha256sum packages/ai/src/provider-error.ts packages/ai/test/provider-error.test.ts > "$RUNNER_TEMP/proof/source-sha256.txt"
+      - name: Focused classifier tests
         if: always() && steps.candidate_apply.outcome == 'success'
         run: |
           set -euo pipefail
-          (cd packages/tui && bun test --timeout 30000 --only-failures test/prompt/shell-submit.test.ts) 2>&1 | tee "$RUNNER_TEMP/proof/focused.log"
-      - name: Candidate full TUI suite
+          (cd packages/ai && bun test --timeout 30000 --only-failures test/provider-error.test.ts) 2>&1 | tee "$RUNNER_TEMP/proof/focused.log"
+      - name: Full AI replay tests
         if: always() && steps.candidate_apply.outcome == 'success'
         run: |
           set -euo pipefail
-          (cd packages/tui && bun run test) 2>&1 | tee "$RUNNER_TEMP/proof/tui.log"
-      - name: Candidate TUI typecheck
+          (cd packages/ai && bun run test) 2>&1 | tee "$RUNNER_TEMP/proof/ai-tests.log"
+      - name: Full Core tests
         if: always() && steps.candidate_apply.outcome == 'success'
         run: |
           set -euo pipefail
-          (cd packages/tui && bun typecheck) 2>&1 | tee "$RUNNER_TEMP/proof/tui-typecheck.log"
+          (cd packages/core && bun run test) 2>&1 | tee "$RUNNER_TEMP/proof/core-tests.log"
+      - name: AI typecheck
+        if: always() && steps.candidate_apply.outcome == 'success'
+        run: |
+          set -euo pipefail
+          (cd packages/ai && bun typecheck) 2>&1 | tee "$RUNNER_TEMP/proof/ai-typecheck.log"
+      - name: Core typecheck
+        if: always() && steps.candidate_apply.outcome == 'success'
+        run: |
+          set -euo pipefail
+          (cd packages/core && bun typecheck) 2>&1 | tee "$RUNNER_TEMP/proof/core-typecheck.log"
       - name: Canonical repository check
         if: always() && steps.candidate_apply.outcome == 'success'
         run: |
           set -euo pipefail
-          bun run check 2>&1 | tee "$RUNNER_TEMP/proof/check.log"
-      - name: Verify retained source identity
+          (bun run check) 2>&1 | tee "$RUNNER_TEMP/proof/check.log"
+      - name: Verify final deterministic full-index source identity
         if: always() && steps.candidate_apply.outcome == 'success'
         run: |
           set -euo pipefail
           sha256sum -c "$RUNNER_TEMP/proof/source-sha256.txt"
           git diff --check
-          git diff --full-index > "$RUNNER_TEMP/proof/final.patch"
-          cmp "$RUNNER_TEMP/candidate.patch" "$RUNNER_TEMP/proof/final.patch"
+          test -z "$(git ls-files --others --exclude-standard)"
+          git diff --binary --full-index > "$RUNNER_TEMP/proof/final-full-index.patch"
+          cmp "$RUNNER_TEMP/proof/initial-full-index.patch" "$RUNNER_TEMP/proof/final-full-index.patch"
+          cmp "$RUNNER_TEMP/candidate.patch" "$RUNNER_TEMP/proof/final-full-index.patch"
       - name: Retain native evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: shell-submit-native-evidence
+          name: gateway-overflow-native-evidence
           path: ${{ runner.temp }}/proof
           if-no-files-found: error
