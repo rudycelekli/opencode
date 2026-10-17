@@ -1,0 +1,264 @@
+{
+  "issue": 50597,
+  "base": "8c173a8f3805d8e749d44311054b07e37a1b2ce1",
+  "branch": "kimi-provider-icon",
+  "patch_sha256": "565c5317fe4e8007503a9088477703fa8ac57b0aec8683adbfe9b52bedf77bea",
+  "production_file": "packages/ui/src/components/provider-icon.tsx",
+  "current_source_sha256": "e44323b0e8b412dcd7b748fa9cfc58d84fbeb2e6e6af3603bb3c8b91be645e35",
+  "baseline_source_sha256": "371c65cadc10c9ab9fcf2ed419f2a87c10314a32f59de9937d597bfd7f4733b7",
+  "baseline": {
+    "passed": 4,
+    "failed": 4,
+    "cases": [
+      {
+        "id": "kimi-code-plan-cn",
+        "expected": "kimi-for-coding",
+        "actual": "synthetic",
+        "pass": false,
+        "box": {
+          "x": 51,
+          "y": 206.875,
+          "width": 64,
+          "height": 64,
+          "top": 206.875,
+          "right": 115,
+          "bottom": 270.875,
+          "left": 51
+        }
+      },
+      {
+        "id": "kimi-code-plan-global",
+        "expected": "kimi-for-coding",
+        "actual": "synthetic",
+        "pass": false,
+        "box": {
+          "x": 293,
+          "y": 206.875,
+          "width": 64,
+          "height": 64,
+          "top": 206.875,
+          "right": 357,
+          "bottom": 270.875,
+          "left": 293
+        }
+      },
+      {
+        "id": "kimi-for-coding",
+        "expected": "kimi-for-coding",
+        "actual": "kimi-for-coding",
+        "pass": true,
+        "box": {
+          "x": 535,
+          "y": 206.875,
+          "width": 64,
+          "height": 64,
+          "top": 206.875,
+          "right": 599,
+          "bottom": 270.875,
+          "left": 535
+        }
+      },
+      {
+        "id": "unknown-provider",
+        "expected": "synthetic",
+        "actual": "synthetic",
+        "pass": true,
+        "box": {
+          "x": 777,
+          "y": 206.875,
+          "width": 64,
+          "height": 64,
+          "top": 206.875,
+          "right": 841,
+          "bottom": 270.875,
+          "left": 777
+        }
+      },
+      {
+        "id": "openai",
+        "expected": "openai",
+        "actual": "openai",
+        "pass": true,
+        "box": {
+          "x": 1019,
+          "y": 206.875,
+          "width": 64,
+          "height": 64,
+          "top": 206.875,
+          "right": 1083,
+          "bottom": 270.875,
+          "left": 1019
+        }
+      },
+      {
+        "id": "kimi-code-plan-cn",
+        "update": true,
+        "sameNode": true,
+        "expected": "kimi-for-coding",
+        "actual": "synthetic",
+        "pass": false
+      },
+      {
+        "id": "kimi-code-plan-global",
+        "update": true,
+        "sameNode": true,
+        "expected": "kimi-for-coding",
+        "actual": "synthetic",
+        "pass": false
+      },
+      {
+        "id": "unknown-provider",
+        "update": true,
+        "sameNode": true,
+        "expected": "synthetic",
+        "actual": "synthetic",
+        "pass": true
+      }
+    ]
+  },
+  "candidate": {
+    "passed": 8,
+    "failed": 0,
+    "cases": [
+      {
+        "id": "kimi-code-plan-cn",
+        "expected": "kimi-for-coding",
+        "actual": "kimi-for-coding",
+        "pass": true,
+        "box": {
+          "x": 51,
+          "y": 206.875,
+          "width": 64,
+          "height": 64,
+          "top": 206.875,
+          "right": 115,
+          "bottom": 270.875,
+          "left": 51
+        }
+      },
+      {
+        "id": "kimi-code-plan-global",
+        "expected": "kimi-for-coding",
+        "actual": "kimi-for-coding",
+        "pass": true,
+        "box": {
+          "x": 293,
+          "y": 206.875,
+          "width": 64,
+          "height": 64,
+          "top": 206.875,
+          "right": 357,
+          "bottom": 270.875,
+          "left": 293
+        }
+      },
+      {
+        "id": "kimi-for-coding",
+        "expected": "kimi-for-coding",
+        "actual": "kimi-for-coding",
+        "pass": true,
+        "box": {
+          "x": 535,
+          "y": 206.875,
+          "width": 64,
+          "height": 64,
+          "top": 206.875,
+          "right": 599,
+          "bottom": 270.875,
+          "left": 535
+        }
+      },
+      {
+        "id": "unknown-provider",
+        "expected": "synthetic",
+        "actual": "synthetic",
+        "pass": true,
+        "box": {
+          "x": 777,
+          "y": 206.875,
+          "width": 64,
+          "height": 64,
+          "top": 206.875,
+          "right": 841,
+          "bottom": 270.875,
+          "left": 777
+        }
+      },
+      {
+        "id": "openai",
+        "expected": "openai",
+        "actual": "openai",
+        "pass": true,
+        "box": {
+          "x": 1019,
+          "y": 206.875,
+          "width": 64,
+          "height": 64,
+          "top": 206.875,
+          "right": 1083,
+          "bottom": 270.875,
+          "left": 1019
+        }
+      },
+      {
+        "id": "kimi-code-plan-cn",
+        "update": true,
+        "sameNode": true,
+        "expected": "kimi-for-coding",
+        "actual": "kimi-for-coding",
+        "pass": true
+      },
+      {
+        "id": "kimi-code-plan-global",
+        "update": true,
+        "sameNode": true,
+        "expected": "kimi-for-coding",
+        "actual": "kimi-for-coding",
+        "pass": true
+      },
+      {
+        "id": "unknown-provider",
+        "update": true,
+        "sameNode": true,
+        "expected": "synthetic",
+        "actual": "synthetic",
+        "pass": true
+      }
+    ]
+  },
+  "qualification": {
+    "browser": "Google Chrome155.0.8059.82",
+    "bun": "1.4.2",
+    "solid-js": "1.9.15",
+    "babel": "7.29.7",
+    "jsx-dom-expressions": "0.40.10",
+    "transform-typescript": "7.29.7",
+    "viewport": "1280x800",
+    "scheme": "light",
+    "isolation": "headless Chrome separate task-specific user-data-dir, no account login",
+    "source": "Real unmodified ProviderIcon component (except candidate alias) imported from current checkout; SVG copied by bundler asset loader from actual production sprite. Fixture contains only container+labels+assertions.",
+    "transform": "build.ts records browser export conditions, Babel transform-typescript then jsx-dom-expressions generate:dom/moduleName:solid-js/web. Both snapshots use same fixture and transforms.",
+    "public_tests": "No browser test framework exists in ui owner. Parent approved external source-bound browser qualification instead of adding public framework for2aliases.",
+    "typecheck": "Not run locally:tsgo missing bounded runtime; parent arranging exact-source CI root verification.",
+    "installs": "None for Kimi; shared exact-lock Babel/Solid runtime already present.",
+    "first_candidate": "directory-separator commit088ebed933b5fcedda767ce2e75bd077caa58c3a preserved, branch not modified."
+  },
+  "attribution": {
+    "prior_author": "bulingbuling688",
+    "prior_pr": 50785,
+    "prior_closed": "2026-10-10T18:33:44Z",
+    "prior_reason": "V1\u2192V2 promotion; maintainer explicitly invited porting relevant work to V2",
+    "port_claim_check": "Fresh issue50597 comments empty; PR50785 comments only maintainer migration notice; all openPRdataset no50597 mentions; issue-number all-state search only50603/50785 closed. No explicit active V2 port claim found.",
+    "models_dev_pr": 7410,
+    "rename_merged": "2026-09-18T13:05:06Z"
+  },
+  "hashes": {
+    "before.png": "71c488df3ed3898196d2932a5361366d8479d634a8eef5f0368384ba81832e9d",
+    "after.png": "78c191a666c570d7ed2d6eba763de7cddac9d025bd55d1fe31e7f89545d2ccc3",
+    "build.ts": "c2f2e6f8b1f0af7dec7e633f26ef43d41510f61e1d5037a27ff5eda23192ba92",
+    "fixture.ts": "e3ff82461cd8efe0a85b761f5b8c9f5718eb680c9e7d6d1196f76ed1d5e2e8c6",
+    "before-site/fixture.js": "6513c531de8b3b1191d7f3f35397b1ebf5195a09e7c4ab861e47ba4412e19bfd",
+    "after-site/fixture.js": "17ea9501c97f6790b5fa7a5b25c6dafa95b2b7d8d88aca855f8b16e0cbf90749"
+  },
+  "sprite_sha256": "bcf204e5379a3a565e66b8fdb946d71fec94ace1a9523aef058946a2f3cbde39"
+}
