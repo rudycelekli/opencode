@@ -1,0 +1,94 @@
+{
+  "name": "qualify-contribution-wave",
+  "on": {
+    "workflow_dispatch": {
+      "inputs": {
+        "case": {
+          "required": true,
+          "type": "choice",
+          "options": [
+            "webfetch-empty",
+            "command-variant",
+            "directory-separator",
+            "local-provider-docs"
+          ]
+        },
+        "patch_base64": {
+          "required": true,
+          "type": "string"
+        },
+        "patch_sha256": {
+          "required": true,
+          "type": "string"
+        }
+      }
+    }
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "native": {
+      "if": "github.repository == 'rudycelekli/opencode'",
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "os": "${{ fromJSON(inputs.case == 'directory-separator' && '[\"ubuntu-24.04\",\"windows-2022\"]' || '[\"ubuntu-24.04\"]') }}"
+        }
+      },
+      "runs-on": "${{ matrix.os }}",
+      "timeout-minutes": 45,
+      "defaults": {
+        "run": {
+          "shell": "bash"
+        }
+      },
+      "env": {
+        "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24": "true",
+        "NO_COLOR": "1",
+        "GITHUB_ACTIONS": "false",
+        "CASE": "${{ inputs.case }}"
+      },
+      "steps": [
+        {
+          "name": "Use unchanged LF source",
+          "run": "git config --global core.autocrlf false"
+        },
+        {
+          "uses": "actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5",
+          "with": {
+            "repository": "anomalyco/opencode",
+            "ref": "8c173a8f3805d8e749d44311054b07e37a1b2ce1",
+            "persist-credentials": false
+          }
+        },
+        {
+          "name": "Guard source patch and case allowlist",
+          "env": {
+            "PATCH_BASE64": "${{ inputs.patch_base64 }}",
+            "PATCH_SHA256": "${{ inputs.patch_sha256 }}"
+          },
+          "run": "python - <<'PY'\nimport base64,hashlib,json,os,pathlib,subprocess\nroot=pathlib.Path.cwd(); proof=pathlib.Path(os.environ['RUNNER_TEMP'])/'contribution-proof';proof.mkdir()\nrecipes={'webfetch-empty': {'package': 'packages/core', 'files': ['packages/core/src/tool/plugin/webfetch.ts', 'packages/core/test/tool-webfetch.test.ts'], 'tests': ['packages/core/test/tool-webfetch.test.ts'], 'focus': ['bun', 'run', 'script/test.ts', 'test/tool-webfetch.test.ts', '-t', 'reports when nonempty HTML has no readable text'], 'suite': ['bun', 'run', 'script/test.ts', 'test/tool-webfetch.test.ts'], 'marker': 'reports when nonempty HTML has no readable text'}, 'command-variant': {'package': 'packages/core', 'files': ['packages/core/src/config/plugin/command.ts', 'packages/core/test/config/command-subagent.test.ts'], 'tests': ['packages/core/test/config/command-subagent.test.ts'], 'focus': ['bun', 'run', 'script/test.ts', 'test/config/command-subagent.test.ts', '-t', 'command reasoning variants'], 'suite': ['bun', 'run', 'script/test.ts', 'test/config/command.test.ts', 'test/config/command-subagent.test.ts'], 'marker': 'command reasoning variants'}, 'directory-separator': {'package': 'packages/tui', 'files': ['packages/tui/src/component/prompt/autocomplete.tsx', 'packages/tui/test/app-lifecycle.test.tsx'], 'tests': ['packages/tui/test/app-lifecycle.test.tsx'], 'focus': ['bun', 'test', '--timeout', '30000', 'test/app-lifecycle.test.tsx', '-t', '/cd Tab completion'], 'suite': ['bun', 'test', '--timeout', '30000', 'test/prompt/autocomplete.test.ts', 'test/app-lifecycle.test.tsx'], 'marker': '/cd Tab completion'}, 'local-provider-docs': {'package': 'services/www', 'files': ['services/www/src/docs/content/models.mdx', 'services/www/src/docs/content/providers.mdx', 'services/www/src/docs/content/console/providers.mdx'], 'tests': []}}\ncase=os.environ['CASE'];recipe=recipes[case]\nassert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()=='8c173a8f3805d8e749d44311054b07e37a1b2ce1'\nassert not subprocess.check_output(['git','status','--porcelain'],text=True).strip()\npatch=base64.b64decode(os.environ['PATCH_BASE64'],validate=True);digest=hashlib.sha256(patch).hexdigest()\nassert digest==os.environ['PATCH_SHA256']\np=proof/'candidate.patch';p.write_bytes(patch)\nrows=subprocess.check_output(['git','apply','--numstat',str(p)],text=True).splitlines()\nassert len(rows)==len(recipe['files']) and {r.split('\\t')[2] for r in rows}==set(recipe['files'])\nsubprocess.run(['git','apply','--check',str(p)],check=True)\nblocks=patch.decode().split('diff --git ')[1:]\nselected=[b for b in blocks if any(b.startswith('a/'+name+' b/'+name+'\\n') for name in recipe['tests'])]\nassert len(selected)==len(recipe['tests'])\n(proof/'tests.patch').write_text(''.join('diff --git '+b for b in selected))\n(proof/'recipe.json').write_text(json.dumps(recipe,indent=2))\n(proof/'input.json').write_text(json.dumps({'case':case,'base':'8c173a8f3805d8e749d44311054b07e37a1b2ce1','patch_sha256':digest,'runner':os.environ['RUNNER_OS']},indent=2))\nprint('Guarded',case,digest,recipe['files'])\nPY"
+        },
+        {
+          "name": "Install upstream pinned Bun and unmodified dependencies",
+          "uses": "./.github/actions/setup-bun"
+        },
+        {
+          "name": "Run original-source regression and package qualification",
+          "run": "python - <<'PY'\nimport hashlib,json,os,pathlib,re,shutil,subprocess,sys\nroot=pathlib.Path.cwd();proof=pathlib.Path(os.environ['RUNNER_TEMP'])/'contribution-proof';recipe=json.loads((proof/'recipe.json').read_text());case=os.environ['CASE'];package=root/recipe['package'];results=[]\nbun=shutil.which('bun');assert bun\nassert subprocess.check_output([bun,'--version'],text=True).strip()=='1.4.2'\nsubprocess.run(['git','config','--global','user.name','opencode'],check=True)\nsubprocess.run(['git','config','--global','user.email','bot@opencode.ai'],check=True)\ndef run(name,args,cwd=package):\n args=[bun if a=='bun' else a for a in args]\n print('RUN',name,args,flush=True)\n try:\n  p=subprocess.run(args,cwd=cwd,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=1200);code=p.returncode;out=p.stdout\n except subprocess.TimeoutExpired as e:code=124;out=str(e)+'\\n'+str(e.stdout or '')\n (proof/(name+'.log')).write_text(out,encoding='utf-8')\n print('\\n'.join(out.splitlines()[-160:]),flush=True)\n result={'name':name,'args':args,'cwd':str(cwd.relative_to(root)),'exit_code':code};results.append(result)\n return code,out,result\n\ndef capture_docs(prefix):\n for suffix,label in [('docs/models/index.html','models'),('docs/providers/index.html','providers'),('docs/console/providers/index.html','console-providers')]:\n  matches=[p for p in (package/'dist').rglob('*.html') if p.as_posix().endswith(suffix)]\n  for index,p in enumerate(matches):shutil.copyfile(p,proof/f'{prefix}-{label}-{index}.html')\n\nif recipe['tests']:\n subprocess.run(['git','apply',str(proof/'tests.patch')],check=True)\n code,out,result=run('baseline',recipe['focus'])\n should_fail=case!='directory-separator' or os.environ['RUNNER_OS']=='Windows'\n clean=re.sub(r'\\x1b\\[[0-?]*[ -/]*[@-~]','',out)\n forbidden=['Cannot find module','Cannot find package','Unhandled error between tests','Failed to resolve','Test timed out']\n result['oracle_passed']=(code==1 and '(fail)' in clean and recipe['marker'] in clean and not any(t in clean for t in forbidden)) if should_fail else code==0\n result['expected_regression_failure']=should_fail\n subprocess.run(['git','restore','--source=HEAD','--staged','--worktree','--',*recipe['tests']],check=True)\nelse:\n for name,args in [('baseline-typecheck',['bun','typecheck']),('baseline-generated',['bun','run','check:generated']),('baseline-build',['bun','run','build'])]:run(name,args)\n capture_docs('baseline')\n\nsubprocess.run(['git','diff','--exit-code'],check=True)\nsubprocess.run(['git','apply',str(proof/'candidate.patch')],check=True)\nsubprocess.run(['git','diff','--check'],check=True)\nactual=subprocess.check_output(['git','diff','--binary','--full-index'])\nassert actual==(proof/'candidate.patch').read_bytes(),'Applied patch identity mismatch'\nidentities={p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in recipe['files']}\nif recipe['tests']:\n run('candidate-focused',recipe['focus'])\n run('candidate-related',recipe['suite'])\n if os.environ['RUNNER_OS']=='Linux':run('candidate-package-suite',['bun','run','test'])\n run('candidate-typecheck',['bun','typecheck'])\nelse:\n for name,args in [('candidate-typecheck',['bun','typecheck']),('candidate-generated',['bun','run','check:generated']),('candidate-build',['bun','run','build'])]:run(name,args)\n capture_docs('candidate')\nif os.environ['RUNNER_OS']=='Linux':run('canonical-check',['bun','run','check'],root)\nsubprocess.run(['git','diff','--check'],check=True)\nassert all(hashlib.sha256((root/p).read_bytes()).hexdigest()==v for p,v in identities.items()),'Source changed during checks'\nassert subprocess.check_output(['git','diff','--binary','--full-index'])==(proof/'candidate.patch').read_bytes()\n(proof/'source-sha256.json').write_text(json.dumps(identities,indent=2))\n(proof/'results.json').write_text(json.dumps(results,indent=2))\nfailed=[x for x in results if not x.get('oracle_passed',x['exit_code']==0)]\nprint(json.dumps({'checks':len(results),'failed':failed},indent=2))\nsys.exit(bool(failed))\nPY"
+        },
+        {
+          "name": "Retain evidence even on failure",
+          "if": "always()",
+          "uses": "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+          "with": {
+            "name": "contribution-${{ inputs.case }}-${{ runner.os }}-${{ github.run_id }}",
+            "path": "${{ runner.temp }}/contribution-proof",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    }
+  }
+}
