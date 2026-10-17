@@ -1,4 +1,4 @@
-name: qualify-history-workspace-v2
+name: qualify-shell-submit-v5
 on:
   workflow_dispatch:
     inputs:
@@ -36,17 +36,17 @@ jobs:
           python3 - <<'PY'
           import base64, hashlib, os, pathlib, subprocess
           data = base64.b64decode(os.environ['PATCH_BASE64'], validate=True)
-          expected = '3c66a367483829efdc3c3fbcd074c3c515757b0d37dd8963fd564497022d4c66'
+          expected = '1f0f3fa37af7adc829862e465295455d65e9f5002ab44ff2c4c9350f3f07fe47'
           assert os.environ['PATCH_SHA256'] == expected
           assert hashlib.sha256(data).hexdigest() == expected
           root = pathlib.Path(os.environ['RUNNER_TEMP'])
           patch = root / 'candidate.patch'
           patch.write_bytes(data)
-          allowed = {'packages/tui/src/component/prompt/index.tsx', 'packages/tui/test/prompt/history-workspace.test.ts', 'packages/tui/test/prompt/history.test.ts', 'packages/tui/src/prompt/history.tsx', 'packages/tui/src/component/prompt/autocomplete.tsx'}
+          allowed = {'packages/tui/src/component/prompt/index.tsx', 'packages/tui/test/prompt/shell-submit.test.ts'}
           rows = subprocess.check_output(['git', 'apply', '--numstat', str(patch)], text=True).splitlines()
-          assert len(rows) == 5 and {r.split('\t')[2] for r in rows} == allowed
+          assert len(rows) == 2 and {r.split('\t')[2] for r in rows} == allowed
           blocks = data.decode().split('diff --git ')[1:]
-          tests = [b for b in blocks if b.startswith('a/packages/tui/test/prompt/history-workspace.test.ts b/packages/tui/test/prompt/history-workspace.test.ts\n')]
+          tests = [b for b in blocks if b.startswith('a/packages/tui/test/prompt/shell-submit.test.ts b/packages/tui/test/prompt/shell-submit.test.ts\n')]
           assert len(tests) == 1
           (root / 'tests.patch').write_text('diff --git ' + tests[0])
           subprocess.run(['git', 'apply', '--check', str(patch)], check=True)
@@ -78,36 +78,50 @@ jobs:
           git apply "$RUNNER_TEMP/tests.patch"
           git diff --exit-code
           set +e
-          (cd packages/tui && bun test --timeout 30000 --only-failures test/prompt/history-workspace.test.ts --test-name-pattern "history submits workspace-relative files from the destination workspace") > "$RUNNER_TEMP/proof/baseline.log" 2>&1
+          (cd packages/tui && bun test --timeout 30000 --only-failures test/prompt/shell-submit.test.ts) > "$RUNNER_TEMP/proof/baseline.log" 2>&1
           result=$?
           set -e
           cat "$RUNNER_TEMP/proof/baseline.log"
-          test "$result" -ne 0
+          test "$result" -eq 1
           python3 - <<'PY'
           import os, pathlib
           text = (pathlib.Path(os.environ['RUNNER_TEMP']) / 'proof/baseline.log').read_text()
-          assert 'history submits workspace-relative files from the destination workspace' in text
-          assert 'Expected' in text and 'Received' in text
-          assert 'workspace-a' in text and 'workspace-b' in text
-          assert 'content A' in text and 'content B' in text
-          assert '1 fail' in text
+          import json, re
+          requests = [json.loads(value) for value in re.findall(r'SHELL_ADMISSION_REQUEST (\{[^\n]+\})', text)]
+          assert {'command': 'printf shell-admission-fixture', 'newerDraft': False, 'draft': '', 'status': 400} in requests
+          assert {'command': 'printf shell-admission-fixture', 'newerDraft': True, 'draft': 'newer unsent draft', 'status': 400} in requests
+          replies = [json.loads(value) for value in re.findall(r'SHELL_ADMISSION_HTTP_RESPONSE (\{[^\n]+\})', text)]
+          assert len(replies)==2 and all(row['status']==400 for row in replies)
+          marker = '(fail) rejected existing-session shell preserves newer draft: %s'
+          segments = text.split(marker)
+          assert len(segments) == 3
+          for segment in segments[:2]:
+              case_requests = re.findall(r'SHELL_ADMISSION_REQUEST (\{[^\n]+\})', segment)
+              case_replies = re.findall(r'SHELL_ADMISSION_HTTP_RESPONSE (\{[^\n]+\})', segment)
+              assert len(case_requests) == 1 and len(case_replies) == 1
+              assert json.loads(case_requests[0]) in requests
+              assert json.loads(case_replies[0])['status'] == 400
+              assert re.search(r'^error: shell admission rejected$', segment, re.MULTILINE)
+              assert '/promise/generated/client.ts:' in segment
+          assert '0 pass' in text and '2 fail' in text
+          assert not re.search(r'timed?\s*out|timeout|cannot\s+find\s+(?:module|package)|modulenotfound|module.?not.?found|error\s+TS\d+|syntaxerror|failed\s+to\s+(?:resolve|import)', text, re.IGNORECASE)
           PY
-          rm packages/tui/test/prompt/history-workspace.test.ts
+          rm packages/tui/test/prompt/shell-submit.test.ts
       - name: Apply exact candidate
         id: candidate_apply
         if: always() && steps.baseline_semantic.outcome == 'success'
         run: |
           set -euo pipefail
           git apply "$RUNNER_TEMP/candidate.patch"
-          git add -N packages/tui/test/prompt/history-workspace.test.ts
+          git add -N packages/tui/test/prompt/shell-submit.test.ts
           git diff --check
           git diff > "$RUNNER_TEMP/proof/candidate.patch"
-          sha256sum packages/tui/src/component/prompt/autocomplete.tsx packages/tui/src/component/prompt/index.tsx packages/tui/src/prompt/history.tsx packages/tui/test/prompt/history-workspace.test.ts packages/tui/test/prompt/history.test.ts > "$RUNNER_TEMP/proof/source-sha256.txt"
+          sha256sum packages/tui/src/component/prompt/index.tsx packages/tui/test/prompt/shell-submit.test.ts > "$RUNNER_TEMP/proof/source-sha256.txt"
       - name: Candidate focused native tests
         if: always() && steps.candidate_apply.outcome == 'success'
         run: |
           set -euo pipefail
-          (cd packages/tui && bun test --timeout 30000 --only-failures test/prompt/history.test.ts test/prompt/history-provider.test.tsx test/prompt/history-workspace.test.ts) 2>&1 | tee "$RUNNER_TEMP/proof/focused.log"
+          (cd packages/tui && bun test --timeout 30000 --only-failures test/prompt/shell-submit.test.ts) 2>&1 | tee "$RUNNER_TEMP/proof/focused.log"
       - name: Candidate full TUI suite
         if: always() && steps.candidate_apply.outcome == 'success'
         run: |
@@ -135,6 +149,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: history-native-evidence
+          name: shell-submit-native-evidence
           path: ${{ runner.temp }}/proof
           if-no-files-found: error
