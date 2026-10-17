@@ -1,0 +1,64 @@
+{
+  "name": "capture-directory-proof",
+  "on": {
+    "workflow_dispatch": {}
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "native": {
+      "if": "github.repository == 'rudycelekli/opencode'",
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "os": [
+            "ubuntu-24.04",
+            "windows-2022"
+          ]
+        }
+      },
+      "runs-on": "${{ matrix.os }}",
+      "timeout-minutes": 20,
+      "defaults": {
+        "run": {
+          "shell": "bash"
+        }
+      },
+      "env": {
+        "GITHUB_ACTIONS": "false",
+        "NO_COLOR": "1"
+      },
+      "steps": [
+        {
+          "name": "Preserve LF source",
+          "run": "git config --global core.autocrlf false"
+        },
+        {
+          "uses": "actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5",
+          "with": {
+            "repository": "anomalyco/opencode",
+            "ref": "8c173a8f3805d8e749d44311054b07e37a1b2ce1",
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "./.github/actions/setup-bun"
+        },
+        {
+          "name": "Capture actual production renderer before and after",
+          "run": "python - <<'PY'\nimport base64,hashlib,json,os,pathlib,re,subprocess\nroot=pathlib.Path.cwd();proof=pathlib.Path(os.environ['RUNNER_TEMP'])/'directory-capture-proof';proof.mkdir()\nassert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()=='8c173a8f3805d8e749d44311054b07e37a1b2ce1'\npatch=base64.b64decode('ZGlmZiAtLWdpdCBhL3BhY2thZ2VzL3R1aS9zcmMvY29tcG9uZW50L3Byb21wdC9hdXRvY29tcGxldGUudHN4IGIvcGFja2FnZXMvdHVpL3NyYy9jb21wb25lbnQvcHJvbXB0L2F1dG9jb21wbGV0ZS50c3gKaW5kZXggYzY2OTQ5MWMwOTZlZGQ1NDM1ZWE4Yzk3NmYxMzAwMjgyZjM1ZjMzNC4uMzU1NWYzZDNhZjRiYWE5MzM2NDVjYzQ4YzVkY2Q1OTkxNTE1MjZiZCAxMDA2NDQKLS0tIGEvcGFja2FnZXMvdHVpL3NyYy9jb21wb25lbnQvcHJvbXB0L2F1dG9jb21wbGV0ZS50c3gKKysrIGIvcGFja2FnZXMvdHVpL3NyYy9jb21wb25lbnQvcHJvbXB0L2F1dG9jb21wbGV0ZS50c3gKQEAgLTY0OCw3ICs2NDgsOSBAQCBleHBvcnQgZnVuY3Rpb24gQXV0b2NvbXBsZXRlKHByb3BzOiB7CiAgICAgY29uc3Qgc2VsZWN0ZWRQYXRoID0gZGlzcGxheVRleHQuc3RhcnRzV2l0aCgiQCIpID8gZGlzcGxheVRleHQuc2xpY2UoMSkgOiBkaXNwbGF5VGV4dAogCiAgICAgaWYgKHN0b3JlLnZpc2libGUgPT09ICJkaXJlY3RvcnkiKSB7Ci0gICAgICBpbnNlcnREaXJlY3Rvcnkoc2VsZWN0ZWRQYXRoLmVuZHNXaXRoKHBhdGguc2VwKSA/IHNlbGVjdGVkUGF0aCA6IHNlbGVjdGVkUGF0aCArIHBhdGguc2VwKQorICAgICAgaW5zZXJ0RGlyZWN0b3J5KAorICAgICAgICBzZWxlY3RlZFBhdGguZW5kc1dpdGgoIi8iKSB8fCBzZWxlY3RlZFBhdGguZW5kc1dpdGgocGF0aC5zZXApID8gc2VsZWN0ZWRQYXRoIDogc2VsZWN0ZWRQYXRoICsgcGF0aC5zZXAsCisgICAgICApCiAgICAgICBzZXRTdG9yZSgic2VsZWN0ZWQiLCAwKQogICAgICAgcmV0dXJuCiAgICAgfQpkaWZmIC0tZ2l0IGEvcGFja2FnZXMvdHVpL3Rlc3QvYXBwLWxpZmVjeWNsZS50ZXN0LnRzeCBiL3BhY2thZ2VzL3R1aS90ZXN0L2FwcC1saWZlY3ljbGUudGVzdC50c3gKaW5kZXggMmU5ODMzZWI2ZWQwODljNzMzNThlOTA3MjRiMGNlYTI0Y2E2ZDQ2ZC4uN2FlM2I1ZTNiMDg0MDc3ZjFjYzQ4MmQwOTBkMTY3MjFjZDliMGE3ZSAxMDA2NDQKLS0tIGEvcGFja2FnZXMvdHVpL3Rlc3QvYXBwLWxpZmVjeWNsZS50ZXN0LnRzeAorKysgYi9wYWNrYWdlcy90dWkvdGVzdC9hcHAtbGlmZWN5Y2xlLnRlc3QudHN4CkBAIC0xLDUgKzEsNSBAQAogaW1wb3J0IHsgZXhwZWN0LCB0ZXN0IH0gZnJvbSAiYnVuOnRlc3QiCi1pbXBvcnQgeyBFbWJlZGRlZFRlcm1pbmFsUmVuZGVyYWJsZSB9IGZyb20gIkBvcGVudHVpL2NvcmUiCitpbXBvcnQgeyBFbWJlZGRlZFRlcm1pbmFsUmVuZGVyYWJsZSwgVGV4dGFyZWFSZW5kZXJhYmxlIH0gZnJvbSAiQG9wZW50dWkvY29yZSIKIGltcG9ydCB7IGNyZWF0ZVRlc3RSZW5kZXJlciB9IGZyb20gIkBvcGVudHVpL2NvcmUvdGVzdGluZyIKIGltcG9ydCB7IEVmZmVjdCwgRmlsZVN5c3RlbSB9IGZyb20gImVmZmVjdCIKIGltcG9ydCB7IEdsb2JhbCB9IGZyb20gIkBvcGVuY29kZS91dGlsL2dsb2JhbCIKQEAgLTEyMTUsNiArMTIxNSw0MSBAQCB0ZXN0KCJuZXcgc2Vzc2lvbiBpbmhlcml0cyB0aGUgYWN0aXZlIHNlc3Npb24gbW9kZWwiLCBhc3luYyAoKSA9PiB7CiAgIGV4cGVjdChmcmFtZSkudG9Db250YWluKCJTZXNzaW9uIE1vZGVsIikKIH0pCiAKK3Rlc3QuZWFjaChwcm9jZXNzLnBsYXRmb3JtID09PSAid2luMzIiID8gWyJuZXN0ZWQiXSA6IFsibmVzdGVkIiwgImxpdGVyYWxcXCJdKSgKKyAgIi9jZCBUYWIgY29tcGxldGlvbiBwcmVzZXJ2ZXMgdGhlIGRpcmVjdG9yeSBkZWxpbWl0ZXIgZm9yICVzIiwKKyAgYXN5bmMgKG5hbWUpID0+IHsKKyAgICBhd2FpdCB1c2luZyBzdGF0ZSA9IGF3YWl0IHRtcGRpcigpCisgICAgYXdhaXQgdXNpbmcgc2V0dXAgPSBhd2FpdCBjcmVhdGVBcHBGaXh0dXJlKHsKKyAgICAgIHN0YXRlOiBzdGF0ZS5wYXRoLAorICAgICAgd2lkdGg6IDEwMCwKKyAgICAgIGhlaWdodDogMzAsCisgICAgICBmZXRjaDogKHVybCkgPT4geworICAgICAgICBpZiAodXJsLnBhdGhuYW1lID09PSAiL2FwaS9mcy9saXN0IikKKyAgICAgICAgICByZXR1cm4ganNvbih7CisgICAgICAgICAgICBsb2NhdGlvbjogeyBkaXJlY3RvcnksIHByb2plY3Q6IHsgaWQ6ICJwcm9qX3Rlc3QiLCBkaXJlY3RvcnksIGNhbm9uaWNhbDogZGlyZWN0b3J5IH0gfSwKKyAgICAgICAgICAgIGRhdGE6IFt7IHBhdGg6IG5hbWUsIHR5cGU6ICJkaXJlY3RvcnkiIH1dLAorICAgICAgICAgIH0pCisgICAgICAgIHJldHVybiB1bmRlZmluZWQKKyAgICAgIH0sCisgICAgfSkKKyAgICBhd2FpdCBzZXR1cC5yZWFkeQorICAgIGF3YWl0IHNldHVwLndhaXRGb3JGcmFtZSgoKSA9PiBzZXR1cC5yZW5kZXJlci5jdXJyZW50Rm9jdXNlZFJlbmRlcmFibGUgaW5zdGFuY2VvZiBUZXh0YXJlYVJlbmRlcmFibGUpCisgICAgYXdhaXQgc2V0dXAubW9ja0lucHV0LnR5cGVUZXh0KGAvY2QgJHtuYW1lfWApCisgICAgYXdhaXQgc2V0dXAud2FpdEZvckZyYW1lKChmcmFtZSkgPT4gZnJhbWUuaW5jbHVkZXMoYCR7bmFtZX0vYCkpCisgICAgc2V0dXAubW9ja0lucHV0LnByZXNzVGFiKCkKKyAgICBhd2FpdCBzZXR1cC5yZW5kZXJPbmNlKCkKKyAgICBjb25zdCBpbnB1dCA9IHNldHVwLnJlbmRlcmVyLmN1cnJlbnRGb2N1c2VkUmVuZGVyYWJsZQorICAgIGlmICghKGlucHV0IGluc3RhbmNlb2YgVGV4dGFyZWFSZW5kZXJhYmxlKSkgdGhyb3cgbmV3IEVycm9yKCJQcm9tcHQgZGlkIG5vdCByZXRhaW4gZm9jdXMiKQorICAgIHRyeSB7CisgICAgICBleHBlY3QoaW5wdXQucGxhaW5UZXh0KS50b0JlKGAvY2QgJHtuYW1lfS9gKQorICAgIH0gZmluYWxseSB7CisgICAgICBzZXR1cC5tb2NrSW5wdXQucHJlc3NFc2NhcGUoKQorICAgICAgc2V0dXAubW9ja0lucHV0LnByZXNzS2V5KCJjIiwgeyBjdHJsOiB0cnVlIH0pCisgICAgICBhd2FpdCBzZXR1cC53YWl0Rm9yRnJhbWUoKCkgPT4gaW5wdXQucGxhaW5UZXh0ID09PSAiIikKKyAgICB9CisgIH0sCispCisKIHRlc3QoImtlZXBzIHRoZSBwcm9tcHQgZGlzcGxheSBzdGFibGUgd2hpbGUgYSBuZXcgbG9jYXRpb24gY2F0YWxvZyBsb2FkcyIsIGFzeW5jICgpID0+IHsKICAgY29uc3Qgc291cmNlID0gcHJvY2Vzcy5jd2QoKQogICBjb25zdCB0YXJnZXQgPSBwYXRoLmpvaW4ocGF0aC5wYXJzZShzb3VyY2UpLnJvb3QsICJvcGVuY29kZS10YXJnZXQiKQo=');diag=base64.b64decode('LS0tIGEvcGFja2FnZXMvdHVpL3Rlc3QvYXBwLWxpZmVjeWNsZS50ZXN0LnRzeAorKysgYi9wYWNrYWdlcy90dWkvdGVzdC9hcHAtbGlmZWN5Y2xlLnRlc3QudHN4CkBAIC0xMjQxLDYgKzEyNDEsMTUgQEAKICAgICBjb25zdCBpbnB1dCA9IHNldHVwLnJlbmRlcmVyLmN1cnJlbnRGb2N1c2VkUmVuZGVyYWJsZQogICAgIGlmICghKGlucHV0IGluc3RhbmNlb2YgVGV4dGFyZWFSZW5kZXJhYmxlKSkgdGhyb3cgbmV3IEVycm9yKCJQcm9tcHQgZGlkIG5vdCByZXRhaW4gZm9jdXMiKQogICAgIHRyeSB7CisgICAgICBjb25zdCBjYXB0dXJlID0gcHJvY2Vzcy5lbnYuT1BFTkNPREVfRElSRUNUT1JZX0NBUFRVUkVfRElSCisgICAgICBpZiAoY2FwdHVyZSkgeworICAgICAgICBjb25zdCBsYWJlbCA9IG5hbWUgPT09ICJuZXN0ZWQiID8gIm5lc3RlZCIgOiAibGl0ZXJhbC1iYWNrc2xhc2giCisgICAgICAgIGF3YWl0IEJ1bi53cml0ZSgKKyAgICAgICAgICBwYXRoLmpvaW4oY2FwdHVyZSwgYCR7cHJvY2Vzcy5wbGF0Zm9ybX0tJHtsYWJlbH0uanNvbmApLAorICAgICAgICAgIEpTT04uc3RyaW5naWZ5KHsgcGxhdGZvcm06IHByb2Nlc3MucGxhdGZvcm0sIG5hbWUsIGlucHV0OiBpbnB1dC5wbGFpblRleHQsIGZyYW1lOiBzZXR1cC5jYXB0dXJlQ2hhckZyYW1lKCkgfSwgbnVsbCwgMiksCisgICAgICAgICkKKyAgICAgICAgYXdhaXQgQnVuLndyaXRlKHBhdGguam9pbihjYXB0dXJlLCBgJHtwcm9jZXNzLnBsYXRmb3JtfS0ke2xhYmVsfS50eHRgKSwgc2V0dXAuY2FwdHVyZUNoYXJGcmFtZSgpKQorICAgICAgfQogICAgICAgZXhwZWN0KGlucHV0LnBsYWluVGV4dCkudG9CZShgL2NkICR7bmFtZX0vYCkKICAgICB9IGZpbmFsbHkgewogICAgICAgc2V0dXAubW9ja0lucHV0LnByZXNzRXNjYXBlKCkK')\nassert hashlib.sha256(patch).hexdigest()=='ecc3b474f5b38e3e6982ffb16763d3be108de7eaf0ce2b182cd39a1529216fb6'\n(proof/'candidate.patch').write_bytes(patch);(proof/'diagnostic.patch').write_bytes(diag)\nblocks=patch.decode().split('diff --git ')[1:]\ntests=''.join('diff --git '+b for b in blocks if b.startswith('a/packages/tui/test/'))\n(proof/'tests.patch').write_bytes(tests.encode())\nresults=[]\nfor condition in ['baseline','candidate']:\n subprocess.run(['git','reset','--hard','HEAD'],check=True)\n subprocess.run(['git','apply',str(proof/('tests.patch' if condition=='baseline' else 'candidate.patch'))],check=True)\n expected=subprocess.check_output(['git','show','HEAD:packages/tui/src/component/prompt/autocomplete.tsx']) if condition=='baseline' else None\n if expected is not None:assert (root/'packages/tui/src/component/prompt/autocomplete.tsx').read_bytes()==expected\n source=hashlib.sha256((root/'packages/tui/src/component/prompt/autocomplete.tsx').read_bytes()).hexdigest()\n subprocess.run(['git','apply',str(proof/'diagnostic.patch')],check=True)\n capture=proof/condition;capture.mkdir();env={**os.environ,'OPENCODE_DIRECTORY_CAPTURE_DIR':str(capture)}\n p=subprocess.run(['bun','test','--timeout','30000','test/app-lifecycle.test.tsx','-t','/cd Tab completion'],cwd=root/'packages/tui',env=env,capture_output=True,text=True,timeout=180)\n (proof/(condition+'.log')).write_text(p.stdout+p.stderr)\n rows=[json.loads(f.read_text()) for f in capture.glob('*.json')]\n assert rows and all(row['platform']==('win32' if os.environ['RUNNER_OS']=='Windows' else 'linux') for row in rows)\n should_fail=condition=='baseline' and os.environ['RUNNER_OS']=='Windows'\n assert p.returncode==(1 if should_fail else 0)\n nested=next(row for row in rows if row['name']=='nested')\n assert nested['input']==('/cd nested/\\\\' if should_fail else '/cd nested/')\n results.append({'condition':condition,'exit':p.returncode,'source_sha256':source,'frames':rows})\nassert hashlib.sha256((root/'packages/tui/src/component/prompt/autocomplete.tsx').read_bytes()).hexdigest()==results[-1]['source_sha256']\n(proof/'results.json').write_text(json.dumps({'base':'8c173a8f3805d8e749d44311054b07e37a1b2ce1','patch_sha256':'ecc3b474f5b38e3e6982ffb16763d3be108de7eaf0ce2b182cd39a1529216fb6','diagnostic_sha256':hashlib.sha256(diag).hexdigest(),'canonical_qualification_run':39063637906,'results':results},indent=2))\nPY"
+        },
+        {
+          "uses": "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+          "if": "always()",
+          "with": {
+            "name": "directory-frames-${{ runner.os }}-${{ github.run_id }}",
+            "path": "${{ runner.temp }}/directory-capture-proof",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    }
+  }
+}
