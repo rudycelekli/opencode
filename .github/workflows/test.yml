@@ -1,335 +1,119 @@
-name: test
-
+name: qualify-copilot-free-models
 on:
-  push:
-    branches:
-      - dev
-  pull_request:
   workflow_dispatch:
-
-concurrency:
-  # Keep every run on dev so cancelled checks do not pollute the default branch
-  # commit history. PRs and other branches still share a group and cancel stale runs.
-  group: ${{ case(github.ref == 'refs/heads/dev', format('{0}-{1}', github.workflow, github.run_id), format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref)) }}
-  cancel-in-progress: true
-
+    inputs:
+      patch_base64:
+        required: true
+        type: string
+      patch_sha256:
+        required: true
+        type: string
 permissions:
   contents: read
-  checks: write
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
-  affected:
-    name: affected packages
-    runs-on: blacksmith-4vcpu-ubuntu-2404
-    outputs:
-      e2e: ${{ steps.packages.outputs.app }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          # Pull requests diff against the merge's first parent; pushes diff against the previous dev head.
-          fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 0 }}
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: package.json
-
-      - name: Find affected packages
-        id: packages
-        env:
-          TURBO_SCM_BASE: ${{ github.event_name == 'pull_request' && format('{0}^1', github.sha) || github.event.before }}
-          TURBO_SCM_HEAD: ${{ github.sha }}
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "app=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          # Storybook hosts the component tests, but no app package depends on it.
-          bun x turbo@2.10.2 ls --affected --filter=@opencode/app --filter=@opencode/storybook --output=json > affected.json
-          bun -e 'const result = await Bun.file("affected.json").json(); console.log(`app=${result.packages.count > 0}`)' >> "$GITHUB_OUTPUT"
-
-  unit:
-    name: unit (${{ matrix.settings.name }})
-    strategy:
-      fail-fast: false
-      matrix:
-        settings:
-          - name: linux
-            host: blacksmith-4vcpu-ubuntu-2404
-          - name: windows
-            host: blacksmith-4vcpu-windows-2025
-    runs-on: ${{ matrix.settings.host }}
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          # Pull requests diff against the merge's first parent; pushes diff against the previous dev head.
-          fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 0 }}
-
-      - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: "24"
-
-      - name: Setup Bun
-        uses: ./.github/actions/setup-bun
-
-      - name: Test Effect simplification rules
-        if: runner.os == 'Linux'
-        run: bun run test:effect-simplification-rules
-
-      - name: Check Effect simplifications
-        if: runner.os == 'Linux'
-        run: bun run lint:effect-simplifications
-
-      - name: Configure git identity
-        run: |
-          git config --global user.email "bot@opencode.ai"
-          git config --global user.name "opencode"
-
-      - name: Run unit tests
-        timeout-minutes: 20
-        run: |
-          # The runners have four vCPUs, and each Bun test process performs its own concurrent work.
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            GITHUB_ACTIONS=false bun turbo test --concurrency=3
-            exit 0
-          fi
-          GITHUB_ACTIONS=false bun turbo test --affected --concurrency=3
-        env:
-          OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
-          TURBO_SCM_BASE: ${{ github.event_name == 'pull_request' && format('{0}^1', github.sha) || github.event.before }}
-          TURBO_SCM_HEAD: ${{ github.sha }}
-
-      - name: Verify published codemode package
-        if: runner.os == 'Linux'
-        working-directory: packages/codemode
-        run: bun run script/publish.ts --dry-run
-
-      - name: Verify packed workerd SDK
-        if: runner.os == 'Linux'
-        timeout-minutes: 15
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            bun turbo verify:package --filter=@opencode/sdk
-            exit 0
-          fi
-          bun turbo verify:package --affected --filter=@opencode/sdk
-        env:
-          TURBO_SCM_BASE: ${{ github.event_name == 'pull_request' && format('{0}^1', github.sha) || github.event.before }}
-          TURBO_SCM_HEAD: ${{ github.sha }}
-
-      - name: Check generated client
-        if: runner.os == 'Linux'
-        working-directory: packages/client
-        run: bun run check:generated
-
-      - name: Check generated documentation
-        if: runner.os == 'Linux'
-        working-directory: services/www
-        run: bun run check:generated
-
-  build:
-    name: build (${{ matrix.settings.name }})
-    strategy:
-      fail-fast: false
-      matrix:
-        settings:
-          - name: linux
-            host: blacksmith-4vcpu-ubuntu-2404
-          - name: windows
-            host: blacksmith-4vcpu-windows-2025
-    runs-on: ${{ matrix.settings.host }}
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          # Pull requests diff against the merge's first parent; pushes diff against the previous dev head.
-          fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 0 }}
-
-      - name: Setup Bun
-        uses: ./.github/actions/setup-bun
-
-      - name: Verify compiled service lifecycle
-        timeout-minutes: 10
-        working-directory: packages/cli
-        env:
-          NODE_OPTIONS: ${{ runner.os == 'Windows' && '--max-old-space-size=4096' || '' }}
-        run: |
-          bun run script/build.ts --single --skip-install
-          bun run script/service-smoke.ts
-
-      # Unit tests import workspace sources and never build the libraries they use, so this checks those builds. The
-      # CLI and app closures hold every library a tested package depends on. The builds are tsc and Bun.build with no
-      # platform-specific steps, and the libraries publish from Linux, so Windows skips them.
-      - name: Build workspace libraries
-        if: ${{ !cancelled() && runner.os == 'Linux' }}
-        timeout-minutes: 10
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            bun turbo build --concurrency=3 --filter='@opencode/cli^...' --filter='@opencode/app^...'
-            exit 0
-          fi
-          bun turbo build --affected --concurrency=3 --filter='@opencode/cli^...' --filter='@opencode/app^...'
-        env:
-          TURBO_SCM_BASE: ${{ github.event_name == 'pull_request' && format('{0}^1', github.sha) || github.event.before }}
-          TURBO_SCM_HEAD: ${{ github.sha }}
-
-      - name: Setup Node build runtime
-        if: ${{ !cancelled() }}
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: "26.4.0"
-
-      - name: Verify Node build
-        if: ${{ !cancelled() }}
-        timeout-minutes: 15
-        working-directory: packages/cli
-        env:
-          NODE_OPTIONS: ${{ runner.os == 'Windows' && '--max-old-space-size=4096' || '' }}
-        run: |
-          bun run script/build-node.ts --single --skip-install --outdir=dist/node
-          bun run script/service-smoke.ts --node
-
-  e2e-suite:
-    name: e2e (${{ matrix.settings.name }}, ${{ matrix.suite.id }})
-    needs: affected
-    if: needs.affected.outputs.e2e == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        settings:
-          - name: linux
-            host: blacksmith-4vcpu-ubuntu-2404
-          - name: windows
-            host: blacksmith-4vcpu-windows-2025
-        # Playwright splits whole spec files across shards by test count, not duration. Every app-N
-        # entry must use the same total, and the entries must cover 1..total. The service worker suite
-        # reuses shard 2's production build. Each component suite runs once per OS in its own leg, so the
-        # two suites' Storybook servers and test time are not added up on one runner.
-        suite:
-          - id: app-1
-            shard: 1/2
-          - id: app-2
-            shard: 2/2
-          - id: session-ui-components
-          - id: app-components
-    runs-on: ${{ matrix.settings.host }}
+  native:
+    if: github.repository == 'rudycelekli/opencode'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     env:
-      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
-    defaults:
-      run:
-        shell: bash
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      GITHUB_ACTIONS: 'false'
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          # Playwright 1.59 hangs while extracting Chromium with Node 24.16.
-          node-version: "24.15"
-
-      - name: Setup Bun
+          repository: anomalyco/opencode
+          ref: 8c173a8f3805d8e749d44311054b07e37a1b2ce1
+          persist-credentials: false
+      - name: Guard exact reviewed patch and paths
+        env:
+          PATCH_BASE64: ${{ inputs.patch_base64 }}
+          PATCH_SHA256: ${{ inputs.patch_sha256 }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/proof"
+          test "$(git rev-parse HEAD)" = 8c173a8f3805d8e749d44311054b07e37a1b2ce1
+          python3 - <<'PY'
+          import base64, hashlib, os, pathlib, subprocess
+          data = base64.b64decode(os.environ['PATCH_BASE64'], validate=True)
+          expected = '44a3cbcc373e178bfcef2477a9e7f08e5b214fc0b162656f65a0d12f75d5bfff'
+          assert os.environ['PATCH_SHA256'] == expected
+          assert hashlib.sha256(data).hexdigest() == expected
+          root = pathlib.Path(os.environ['RUNNER_TEMP'])
+          patch = root / 'candidate.patch'
+          patch.write_bytes(data)
+          allowed = {'packages/core/src/github-copilot/models.ts', 'packages/core/test/github-copilot/models.test.ts'}
+          rows = subprocess.check_output(['git', 'apply', '--numstat', str(patch)], text=True).splitlines()
+          assert len(rows) == 2 and {r.split('\t')[2] for r in rows} == allowed
+          blocks = data.decode().split('diff --git ')[1:]
+          tests = [b for b in blocks if b.startswith('a/packages/core/test/github-copilot/models.test.ts b/packages/core/test/github-copilot/models.test.ts\n')]
+          assert len(tests) == 1
+          (root / 'tests.patch').write_text('diff --git ' + tests[0])
+          subprocess.run(['git', 'apply', '--check', str(patch)], check=True)
+          (root / 'proof/patch.sha256').write_text(expected + '\n')
+          PY
+      - name: Setup upstream pinned Bun and dependencies
         uses: ./.github/actions/setup-bun
-
-      - name: Read Playwright version
-        id: playwright-version
+      - name: Capture exact toolchain
         run: |
-          version=$(node -e 'console.log(require("./package.json").workspaces.catalog["@playwright/test"])')
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-      - name: Cache Playwright browsers
-        id: playwright-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: ${{ github.workspace }}/.playwright-browsers
-          key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}-chromium
-
-      - name: Install Playwright system dependencies
-        if: runner.os == 'Linux'
-        working-directory: packages/app
-        run: bunx playwright install-deps chromium
-
-      - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        working-directory: packages/app
-        run: bunx playwright install chromium
-
-      - name: Run app e2e tests against production build
-        if: matrix.suite.shard
-        run: bun --cwd packages/app test:e2e:built --shard=${{ matrix.suite.shard }}
-        env:
-          CI: true
-        timeout-minutes: 15
-
-      - name: Verify service worker precaching and upgrades
-        if: matrix.suite.shard == '2/2'
-        working-directory: packages/app
-        run: bunx playwright test --config e2e/service-worker/playwright.config.ts
-        timeout-minutes: 5
-
-      - name: Run session UI component tests
-        if: matrix.suite.id == 'session-ui-components'
-        run: bun --cwd packages/session-ui test:components
-        env:
-          CI: true
-        timeout-minutes: 15
-
-      - name: Run app component tests
-        if: matrix.suite.id == 'app-components'
-        run: bun --cwd packages/app test:components
-        env:
-          CI: true
-        timeout-minutes: 15
-
-      - name: Upload Playwright artifacts
+          set -euo pipefail
+          test "$(bun --version)" = "$(node -p "require('./package.json').packageManager.split('@')[1]")"
+          git rev-parse HEAD > "$RUNNER_TEMP/proof/base.txt"
+          bun --version > "$RUNNER_TEMP/proof/bun-version.txt"
+          git config --global user.email 'bot@opencode.ai'
+          git config --global user.name 'opencode'
+      - name: Actual baseline must fail the new semantic assertion
+        run: |
+          set -euo pipefail
+          git apply "$RUNNER_TEMP/tests.patch"
+          git diff --exit-code -- packages/core/src/github-copilot/models.ts
+          set +e
+          (cd packages/core && bun run script/test.ts test/github-copilot/models.test.ts) > "$RUNNER_TEMP/proof/baseline.log" 2>&1
+          result=$?
+          set -e
+          cat "$RUNNER_TEMP/proof/baseline.log"
+          test "$result" -ne 0
+          python3 - <<'PY'
+          import os, pathlib
+          text = (pathlib.Path(os.environ['RUNNER_TEMP']) / 'proof/baseline.log').read_text()
+          assert 'keeps policy-enabled Copilot Free models available when the picker is disabled' in text
+          assert 'Expected: true' in text and 'Received: false' in text
+          assert '1 fail' in text
+          PY
+          git restore packages/core/test/github-copilot/models.test.ts
+      - name: Apply exact candidate
+        run: |
+          set -euo pipefail
+          git apply "$RUNNER_TEMP/candidate.patch"
+          git diff --check
+          git diff > "$RUNNER_TEMP/proof/candidate.patch"
+          sha256sum packages/core/src/github-copilot/models.ts packages/core/test/github-copilot/models.test.ts > "$RUNNER_TEMP/proof/source-sha256.txt"
+      - name: Candidate focused native tests
+        run: |
+          set -euo pipefail
+          (cd packages/core && bun run script/test.ts test/github-copilot/models.test.ts test/plugin/provider-github-copilot.test.ts) 2>&1 | tee "$RUNNER_TEMP/proof/focused.log"
+      - name: Candidate full Core suite
+        run: |
+          set -euo pipefail
+          (cd packages/core && bun run test) 2>&1 | tee "$RUNNER_TEMP/proof/core.log"
+      - name: Candidate Core typecheck
+        run: |
+          set -euo pipefail
+          (cd packages/core && bun typecheck) 2>&1 | tee "$RUNNER_TEMP/proof/core-typecheck.log"
+      - name: Canonical repository check
+        run: |
+          set -euo pipefail
+          bun run check 2>&1 | tee "$RUNNER_TEMP/proof/check.log"
+      - name: Verify retained source identity
+        run: |
+          set -euo pipefail
+          sha256sum -c "$RUNNER_TEMP/proof/source-sha256.txt"
+          git diff --check
+          git diff > "$RUNNER_TEMP/proof/final.patch"
+          cmp "$RUNNER_TEMP/candidate.patch" "$RUNNER_TEMP/proof/final.patch"
+      - name: Retain native evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: playwright-${{ matrix.settings.name }}-${{ matrix.suite.id }}-${{ github.run_attempt }}
-          if-no-files-found: ignore
-          retention-days: 7
-          path: |
-            packages/app/e2e/test-results
-            packages/app/e2e/playwright-report
-            packages/session-ui/component-tests/test-results
-            packages/session-ui/component-tests/playwright-report
-            packages/app/component-tests/test-results
-            packages/app/component-tests/playwright-report
-
-  # Branch rules require one e2e check per OS. These keep those names and pass only when every
-  # leg above passed, or when no leg was needed; a failing leg on either OS fails both checks.
-  e2e:
-    name: e2e (${{ matrix.os }})
-    needs: [affected, e2e-suite]
-    if: ${{ !cancelled() }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [linux, windows]
-    runs-on: blacksmith-4vcpu-ubuntu-2404
-    steps:
-      - name: Check browser test results
-        env:
-          AFFECTED: ${{ needs.affected.result }}
-          SUITES: ${{ needs.e2e-suite.result }}
-          EXPECTED: ${{ needs.affected.outputs.e2e == 'true' && 'success' || 'skipped' }}
-        run: |
-          echo "affected packages: $AFFECTED, browser test legs: $SUITES (expected $EXPECTED)"
-          test "$AFFECTED" = success && test "$SUITES" = "$EXPECTED"
+          name: copilot-native-evidence
+          path: ${{ runner.temp }}/proof
+          if-no-files-found: error
