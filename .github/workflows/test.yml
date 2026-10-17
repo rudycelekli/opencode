@@ -1,4 +1,4 @@
-name: qualify-copilot-free-models
+name: qualify-copilot-free-models-v2
 on:
   workflow_dispatch:
     inputs:
@@ -61,7 +61,17 @@ jobs:
           bun --version > "$RUNNER_TEMP/proof/bun-version.txt"
           git config --global user.email 'bot@opencode.ai'
           git config --global user.name 'opencode'
+      - name: Prepare verified native ripgrep before test network guards
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/native-tools"
+          curl --fail --location --max-time 120 https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-unknown-linux-musl.tar.gz --output "$RUNNER_TEMP/ripgrep.tar.gz"
+          echo "1c9297be4a084eea7ecaedf93eb03d058d6faae29bbc57ecdaf5063921491599  $RUNNER_TEMP/ripgrep.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/ripgrep.tar.gz" --strip-components=1 -C "$RUNNER_TEMP/native-tools" ripgrep-15.1.0-x86_64-unknown-linux-musl/rg
+          "$RUNNER_TEMP/native-tools/rg" --version | tee "$RUNNER_TEMP/proof/ripgrep-version.txt"
+          echo "$RUNNER_TEMP/native-tools" >> "$GITHUB_PATH"
       - name: Actual baseline must fail the new semantic assertion
+        id: baseline_semantic
         run: |
           set -euo pipefail
           git apply "$RUNNER_TEMP/tests.patch"
@@ -80,7 +90,14 @@ jobs:
           assert '1 fail' in text
           PY
           git restore packages/core/test/github-copilot/models.test.ts
+      - name: Pristine baseline full Core suite
+        run: |
+          set -euo pipefail
+          test "$(command -v rg)" = "$RUNNER_TEMP/native-tools/rg"
+          (cd packages/core && bun run test) 2>&1 | tee "$RUNNER_TEMP/proof/baseline-core.log"
       - name: Apply exact candidate
+        id: candidate_apply
+        if: always() && steps.baseline_semantic.outcome == 'success'
         run: |
           set -euo pipefail
           git apply "$RUNNER_TEMP/candidate.patch"
@@ -88,22 +105,27 @@ jobs:
           git diff > "$RUNNER_TEMP/proof/candidate.patch"
           sha256sum packages/core/src/github-copilot/models.ts packages/core/test/github-copilot/models.test.ts > "$RUNNER_TEMP/proof/source-sha256.txt"
       - name: Candidate focused native tests
+        if: always() && steps.candidate_apply.outcome == 'success'
         run: |
           set -euo pipefail
           (cd packages/core && bun run script/test.ts test/github-copilot/models.test.ts test/plugin/provider-github-copilot.test.ts) 2>&1 | tee "$RUNNER_TEMP/proof/focused.log"
       - name: Candidate full Core suite
+        if: always() && steps.candidate_apply.outcome == 'success'
         run: |
           set -euo pipefail
           (cd packages/core && bun run test) 2>&1 | tee "$RUNNER_TEMP/proof/core.log"
       - name: Candidate Core typecheck
+        if: always() && steps.candidate_apply.outcome == 'success'
         run: |
           set -euo pipefail
           (cd packages/core && bun typecheck) 2>&1 | tee "$RUNNER_TEMP/proof/core-typecheck.log"
       - name: Canonical repository check
+        if: always() && steps.candidate_apply.outcome == 'success'
         run: |
           set -euo pipefail
           bun run check 2>&1 | tee "$RUNNER_TEMP/proof/check.log"
       - name: Verify retained source identity
+        if: always() && steps.candidate_apply.outcome == 'success'
         run: |
           set -euo pipefail
           sha256sum -c "$RUNNER_TEMP/proof/source-sha256.txt"
