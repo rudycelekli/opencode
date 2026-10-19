@@ -1,25 +1,99 @@
 {
-  "name": "qualify-contribution-wave",
-  "run-name": "Qualify ${{ inputs.case }}",
+  "name": "qualify-webfetch-review-56505",
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "native": {
+      "if": "github.repository == 'rudycelekli/opencode'",
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 60,
+      "env": {
+        "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24": true,
+        "GITHUB_ACTIONS": "false",
+        "NO_COLOR": "1"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5",
+          "with": {
+            "repository": "rudycelekli/opencode",
+            "ref": "fba000f64b50ed8a059c585bbdb4a6f3e3f90142",
+            "persist-credentials": false
+          }
+        },
+        {
+          "name": "Guard exact reviewed patch and paths",
+          "env": {
+            "PATCH_BASE64": "${{ inputs.patch_base64 }}",
+            "PATCH_SHA256": "${{ inputs.patch_sha256 }}"
+          },
+          "run": "set -euo pipefail\nmkdir -p \"$RUNNER_TEMP/proof\"\ntest \"$(git rev-parse HEAD)\" = fba000f64b50ed8a059c585bbdb4a6f3e3f90142\npython3 - <<'PY'\nimport base64, hashlib, os, pathlib, subprocess\ndata = base64.b64decode(os.environ['PATCH_BASE64'], validate=True)\nexpected = '3856d9d4ed8d4a198413fb95fb6cbd6d84ee58571444133fd1499530f69e7535'\nassert os.environ['PATCH_SHA256'] == expected\nassert hashlib.sha256(data).hexdigest() == expected\nroot = pathlib.Path(os.environ['RUNNER_TEMP'])\npatch = root / 'candidate.patch'\npatch.write_bytes(data)\nallowed = {'packages/core/test/tool-webfetch.test.ts'}\nrows = subprocess.check_output(['git', 'apply', '--numstat', str(patch)], text=True).splitlines()\nassert rows == ['0\\t38\\tpackages/core/test/tool-webfetch.test.ts']\nassert not subprocess.check_output(['git','status','--porcelain'],text=True).strip()\nsubprocess.run(['git', 'apply', '--check', str(patch)], check=True)\n(root / 'proof/patch.sha256').write_text(expected + '\\n')\nPY\n"
+        },
+        {
+          "name": "Setup upstream pinned Bun and dependencies",
+          "uses": "./.github/actions/setup-bun"
+        },
+        {
+          "name": "Capture exact toolchain",
+          "run": "set -euo pipefail\ntest \"$(bun --version)\" = \"1.4.2\"\ntest \"$(node -p \"require('./package.json').packageManager.split('@')[1]\")\" = \"1.4.2\"\ngit rev-parse HEAD > \"$RUNNER_TEMP/proof/base.txt\"\nbun --version > \"$RUNNER_TEMP/proof/bun-version.txt\"\ngit config --global user.email 'bot@opencode.ai'\ngit config --global user.name 'opencode'\n"
+        },
+        {
+          "name": "Prepare verified native ripgrep before test network guards",
+          "run": "set -euo pipefail\nmkdir -p \"$RUNNER_TEMP/native-tools\"\ncurl --fail --location --max-time 120 https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-unknown-linux-musl.tar.gz --output \"$RUNNER_TEMP/ripgrep.tar.gz\"\necho \"1c9297be4a084eea7ecaedf93eb03d058d6faae29bbc57ecdaf5063921491599  $RUNNER_TEMP/ripgrep.tar.gz\" | sha256sum --check\ntar -xzf \"$RUNNER_TEMP/ripgrep.tar.gz\" --strip-components=1 -C \"$RUNNER_TEMP/native-tools\" ripgrep-15.1.0-x86_64-unknown-linux-musl/rg\n\"$RUNNER_TEMP/native-tools/rg\" --version | tee \"$RUNNER_TEMP/proof/ripgrep-version.txt\"\necho \"$RUNNER_TEMP/native-tools\" >> \"$GITHUB_PATH\"\n"
+        },
+        {
+          "name": "Published retained regression baseline (expected success)",
+          "id": "baseline_semantic",
+          "run": "set -euo pipefail\nbun test --help > \"$RUNNER_TEMP/proof/bun-test-help.txt\"\ngrep -- '--reporter=' \"$RUNNER_TEMP/proof/bun-test-help.txt\"\ngrep -- '--reporter-outfile=' \"$RUNNER_TEMP/proof/bun-test-help.txt\"\n(cd packages/core && bun run script/test.ts test/tool-webfetch.test.ts -t 'reports when nonempty HTML has no readable text' --reporter=junit --reporter-outfile=\"$RUNNER_TEMP/proof/baseline.junit.xml\") 2>&1 | tee \"$RUNNER_TEMP/proof/baseline.log\"\npython3 - <<'PYVALIDATOR'\nimport re, collections\nimport xml.etree.ElementTree as ET\n\ndef validate(text, report, windows=False, exit_code=0):\n    text = re.sub(r\"\\x1b\\[[0-?]*[ -/]*[@-~]\", \"\", text)\n    root = ET.fromstring(report)\n    cases = list(root.iter(\"testcase\"))\n    selected = [c for c in cases if c.find(\"skipped\") is None]\n    filtered = [c for c in cases if c.find(\"skipped\") is not None]\n    assert not list(root.iter(\"error\"))\n    expected_filtered = [('defaults format and rejects invalid timeout controls', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('ports HTML text and markdown conversions without active content', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('renders headings, inline semantics, links, images, breaks, and thematic breaks', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('preserves inline and preformatted code verbatim with safe fences', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('preserves inline code boundaries for \"`x`\"', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('preserves inline code boundaries for \"`x\"', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('preserves inline code boundaries for \"x`\"', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('preserves inline code boundaries for \"`\"', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('preserves inline code boundaries for \"``\"', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('preserves inline code boundaries for \"``x`\"', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('preserves inline code boundaries for \"say(`x`)\"', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('preserves inline code boundaries for \"a``b`c\"', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('preserves inline code boundaries for \"x\"', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('preserves inline code boundaries for \" x \"', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('preserves inline code boundaries for \" x\"', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('preserves inline code boundaries for \"x \"', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('preserves inline code boundaries for \"   \"', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('preserves inline code boundaries for \" ` \"', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('fits inline code to its emitted boundaries: discarded trailing backtick after ASCII', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('fits inline code to its emitted boundaries: discarded trailing backtick after Unicode', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('fits inline code to its emitted boundaries: discarded trailing backtick with spare room', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('fits inline code to its emitted boundaries: retained trailing backtick', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('fits inline code to its emitted boundaries: new trailing backtick from an internal run', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('fits inline code to its emitted boundaries: leading backtick without padding room', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('fits inline code to its emitted boundaries: leading backtick alone fits', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('fits inline code to its emitted boundaries: leading backtick with payload fits', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('fits inline code to its emitted boundaries: all backticks truncated', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('fits inline code to its emitted boundaries: all backticks fit', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('fits inline code to its emitted boundaries: mixed internal runs truncated', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('fits inline code to its emitted boundaries: Unicode code point cannot fit', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('fits inline code to its emitted boundaries: ordinary payload cannot fit', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('fits inline code to its emitted boundaries: spaces cannot fit', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('fits inline code to its emitted boundaries: space-only prefix fits', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('fits inline code to its emitted boundaries: truncated prefix becomes space-only', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('fits inline code to its emitted boundaries: discarded trailing space', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('keeps nested ordered and unordered lists structurally readable', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('renders blockquotes and tables as readable Markdown', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('decodes entities and normalizes prose whitespace without joining words', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('omits active and fallback content while retaining surrounding prose', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('is deterministic and bounded for malformed input across parser chunks', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('defaults to the production byte budget with room for closing syntax', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('preserves UTF-8 boundaries at the content limit for x', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('preserves UTF-8 boundaries at the content limit for \u00e9', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('preserves UTF-8 boundaries at the content limit for \ud83d\ude00', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('bounds deeply nested list output and fragmented code fences', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('escapes prose that would otherwise become Markdown structure', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('preserves code whitespace and quotes every line of multiline blocks', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('keeps nested blockquotes inside their outer quote', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('keeps visible whitespace around inline emphasis', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('captures formatting elements inside preformatted content as code only', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('normalizes multiline table cells without changing their columns', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('flattens nested tables without corrupting the outer table', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('preserves loose text around malformed table rows', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('escapes tilde fences and removes empty emphasis markers', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('does not confuse source NUL text with buffered code', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('preserves multiline inline code verbatim', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('prefixes inline code at the start of a blockquote line', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('keeps links nested in inline code associated with their text', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('indents nested list continuations and preserves ordered numbering', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('renders block content outside link syntax', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('recovers nested anchors without unmatched Markdown syntax', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('keeps emphasis whitespace through neutral wrappers', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('flattens preformatted content inside table cells', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('preserves Unicode in inline constructs', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('preserves block content and following lists', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('keeps quoted code with long delimiter runs inside a safe closed fence', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('separates reconstructed tables from adjacent inline and quoted content', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('keeps multiline quoted code closed before following prose', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('keeps active content suppressed when depth fallback begins', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('keeps visible text after depth fallback begins inside preformatted content', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('resumes links around every block structure', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('indents child lists from the actual parent marker width', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('renders captions and definition lists with readable boundaries', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('falls back to row-oriented text for table spans', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('suppresses head and hidden subtrees while retaining visible body content', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('preserves pre breaks and normalizes multiline link titles', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('renders closed and open details according to visibility', 'WebFetchTool helpers', 'test/tool-webfetch.test.ts'), ('preserves readable HTML, raw HTML, and empty responses', 'WebFetchTool registration', 'test/tool-webfetch.test.ts'), ('registers and fetches an ordinary hostname HTTP URL without rewriting it', 'WebFetchTool registration', 'test/tool-webfetch.test.ts'), ('accepts localhost URLs with the same requested-URL permission check', 'WebFetchTool registration', 'test/tool-webfetch.test.ts'), ('follows redirects while approving only the requested URL', 'WebFetchTool registration', 'test/tool-webfetch.test.ts'), ('rejects non-HTTP schemes before permission or transport', 'WebFetchTool registration', 'test/tool-webfetch.test.ts'), ('converts HTML to requested markdown and text', 'WebFetchTool registration', 'test/tool-webfetch.test.ts'), ('converts deeply nested HTML without overflowing', 'WebFetchTool registration', 'test/tool-webfetch.test.ts'), ('rejects declared and streamed oversized bodies', 'WebFetchTool registration', 'test/tool-webfetch.test.ts'), ('keeps images and files unsupported until typed outcomes can carry attachments', 'WebFetchTool registration', 'test/tool-webfetch.test.ts'), ('retries Cloudflare challenges with an honest user agent', 'WebFetchTool registration', 'test/tool-webfetch.test.ts'), ('does not retry ordinary 403 responses', 'WebFetchTool registration', 'test/tool-webfetch.test.ts'), ('times out stalled requests', 'WebFetchTool registration', 'test/tool-webfetch.test.ts')]\n    actual_filtered = collections.Counter((c.get(\"name\"), c.get(\"classname\"), c.get(\"file\")) for c in filtered)\n    assert actual_filtered == collections.Counter(tuple(x) for x in expected_filtered)\n    assert all(not list(c.iter(\"failure\")) and not list(c.iter(\"error\")) for c in filtered)\n    assert all(x.lower() not in text.lower() for x in [\"Cannot find module\", \"Cannot find package\", \"Test timed out\", \"Unhandled error between tests\", \"error TS\", \"SyntaxError\"])\n    assert len(selected) == 1 and exit_code == 0\n    case = selected[0]\n    assert (case.get(\"name\"),case.get(\"classname\"),case.get(\"file\")) == (\"reports when nonempty HTML has no readable text\", \"WebFetchTool registration\", \"test/tool-webfetch.test.ts\")\n    assert not list(case.iter(\"failure\")) and not list(case.iter(\"skipped\"))\n    assert case.get(\"assertions\") == \"4\"\n    assert re.findall(r\"^\\s*(\\d+) pass\\s*$\",text,re.M) == [\"1\"]\n    assert re.findall(r\"^\\s*(\\d+) fail\\s*$\",text,re.M) == [\"0\"]\n    assert re.findall(r\"^\\s*(\\d+) expect\\(\\) calls\\s*$\",text,re.M) == [\"4\"]\n    assert root.get(\"tests\") == \"90\" and root.get(\"skipped\") == \"89\" and root.get(\"failures\") == \"0\"\nimport os, pathlib\nroot = pathlib.Path(os.environ['RUNNER_TEMP']) / 'proof'\nvalidate((root/'baseline.log').read_text(), (root/'baseline.junit.xml').read_text(), os.environ.get('EXPECT_WINDOWS') == '1', int(os.environ.get('BASELINE_EXIT', '0')))\nPYVALIDATOR\ngit diff --exit-code\n"
+        },
+        {
+          "name": "Apply candidate and verify initial full-index identity",
+          "id": "candidate_apply",
+          "if": "always() && steps.baseline_semantic.outcome == 'success'",
+          "run": "set -euo pipefail\ngit apply \"$RUNNER_TEMP/candidate.patch\"\ngit diff --check\ngit diff --binary --full-index > \"$RUNNER_TEMP/proof/initial-full-index.patch\"\ncmp \"$RUNNER_TEMP/candidate.patch\" \"$RUNNER_TEMP/proof/initial-full-index.patch\"\ntest -z \"$(git ls-files --others --exclude-standard)\"\nsha256sum packages/core/test/tool-webfetch.test.ts > \"$RUNNER_TEMP/proof/source-sha256.txt\"\n"
+        },
+        {
+          "name": "Focused actual WebFetch tool suite",
+          "if": "always() && steps.candidate_apply.outcome == 'success'",
+          "run": "set -euo pipefail\n(cd packages/core && bun run script/test.ts test/tool-webfetch.test.ts) 2>&1 | tee \"$RUNNER_TEMP/proof/focused.log\"\n"
+        },
+        {
+          "name": "Full Core tests",
+          "if": "always() && steps.candidate_apply.outcome == 'success'",
+          "run": "set -euo pipefail\n(cd packages/core && bun run test) 2>&1 | tee \"$RUNNER_TEMP/proof/core-tests.log\"\n"
+        },
+        {
+          "name": "Core typecheck",
+          "if": "always() && steps.candidate_apply.outcome == 'success'",
+          "run": "set -euo pipefail\n(cd packages/core && bun typecheck) 2>&1 | tee \"$RUNNER_TEMP/proof/core-typecheck.log\"\n"
+        },
+        {
+          "name": "Canonical repository check",
+          "if": "always() && steps.candidate_apply.outcome == 'success'",
+          "run": "set -euo pipefail\n(bun run check) 2>&1 | tee \"$RUNNER_TEMP/proof/check.log\"\n"
+        },
+        {
+          "name": "Verify final deterministic full-index source identity",
+          "if": "always() && steps.candidate_apply.outcome == 'success'",
+          "run": "set -euo pipefail\ngit diff --binary --full-index > \"$RUNNER_TEMP/proof/final-full-index.patch\"\ngit status --porcelain=v1 > \"$RUNNER_TEMP/proof/final-status.txt\"\nsha256sum packages/core/test/tool-webfetch.test.ts > \"$RUNNER_TEMP/proof/final-source-sha256.txt\"\nsha256sum -c \"$RUNNER_TEMP/proof/source-sha256.txt\"\ngit diff --check\ntest -z \"$(git ls-files --others --exclude-standard)\"\ncmp \"$RUNNER_TEMP/proof/initial-full-index.patch\" \"$RUNNER_TEMP/proof/final-full-index.patch\"\ncmp \"$RUNNER_TEMP/candidate.patch\" \"$RUNNER_TEMP/proof/final-full-index.patch\"\n"
+        },
+        {
+          "name": "Retain native evidence",
+          "if": "always()",
+          "uses": "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+          "with": {
+            "name": "webfetch-review-56505-native-evidence",
+            "path": "${{ runner.temp }}/proof",
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    }
+  },
   "on": {
     "workflow_dispatch": {
       "inputs": {
-        "case": {
-          "required": true,
-          "type": "choice",
-          "options": [
-            "webfetch-empty",
-            "command-variant",
-            "directory-separator",
-            "local-provider-docs",
-            "skill-xml",
-            "finish-diagnostic",
-            "config-xdg",
-            "compaction-ceiling",
-            "malformed-glob",
-            "kimi-provider-icon"
-          ]
-        },
         "patch_base64": {
           "required": true,
           "type": "string"
@@ -29,78 +103,6 @@
           "type": "string"
         }
       }
-    }
-  },
-  "permissions": {
-    "contents": "read"
-  },
-  "jobs": {
-    "native": {
-      "if": "github.repository == 'rudycelekli/opencode'",
-      "strategy": {
-        "fail-fast": false,
-        "matrix": {
-          "os": "${{ fromJSON(inputs.case == 'directory-separator' && '[\"ubuntu-24.04\",\"windows-2022\"]' || '[\"ubuntu-24.04\"]') }}"
-        }
-      },
-      "runs-on": "${{ matrix.os }}",
-      "timeout-minutes": 45,
-      "defaults": {
-        "run": {
-          "shell": "bash"
-        }
-      },
-      "env": {
-        "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24": "true",
-        "NO_COLOR": "1",
-        "GITHUB_ACTIONS": "false",
-        "CASE": "${{ inputs.case }}"
-      },
-      "steps": [
-        {
-          "name": "Use unchanged LF source",
-          "run": "git config --global core.autocrlf false"
-        },
-        {
-          "uses": "actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5",
-          "with": {
-            "repository": "anomalyco/opencode",
-            "ref": "8c173a8f3805d8e749d44311054b07e37a1b2ce1",
-            "persist-credentials": false
-          }
-        },
-        {
-          "name": "Guard source patch and case allowlist",
-          "env": {
-            "PATCH_BASE64": "${{ inputs.patch_base64 }}",
-            "PATCH_SHA256": "${{ inputs.patch_sha256 }}"
-          },
-          "run": "python - <<'PY'\nimport base64,hashlib,json,os,pathlib,subprocess\nroot=pathlib.Path.cwd(); proof=pathlib.Path(os.environ['RUNNER_TEMP'])/'contribution-proof';proof.mkdir()\nrecipes={'webfetch-empty': {'package': 'packages/core', 'files': ['packages/core/src/tool/plugin/webfetch.ts', 'packages/core/test/tool-webfetch.test.ts'], 'tests': ['packages/core/test/tool-webfetch.test.ts'], 'focus': ['bun', 'run', 'script/test.ts', 'test/tool-webfetch.test.ts', '-t', 'reports when nonempty HTML has no readable text'], 'suite': ['bun', 'run', 'script/test.ts', 'test/tool-webfetch.test.ts'], 'marker': 'reports when nonempty HTML has no readable text', 'failures': 1}, 'command-variant': {'package': 'packages/core', 'files': ['packages/core/src/config/plugin/command.ts', 'packages/core/test/config/command-subagent.test.ts'], 'tests': ['packages/core/test/config/command-subagent.test.ts'], 'focus': ['bun', 'run', 'script/test.ts', 'test/config/command-subagent.test.ts', '-t', 'command reasoning variants'], 'suite': ['bun', 'run', 'script/test.ts', 'test/config/command.test.ts', 'test/config/command-subagent.test.ts'], 'marker': 'command reasoning variants', 'failures': 3}, 'directory-separator': {'package': 'packages/tui', 'files': ['packages/tui/src/component/prompt/autocomplete.tsx', 'packages/tui/test/app-lifecycle.test.tsx'], 'tests': ['packages/tui/test/app-lifecycle.test.tsx'], 'focus': ['bun', 'test', '--timeout', '30000', 'test/app-lifecycle.test.tsx', '-t', '/cd Tab completion'], 'suite': ['bun', 'test', '--timeout', '30000', 'test/prompt/autocomplete.test.ts', 'test/app-lifecycle.test.tsx'], 'marker': '/cd Tab completion', 'failures': 1}, 'local-provider-docs': {'package': 'services/www', 'files': ['services/www/src/docs/content/models.mdx', 'services/www/src/docs/content/providers.mdx', 'services/www/src/docs/content/console/providers.mdx'], 'tests': []}, 'skill-xml': {'package': 'packages/core', 'files': ['packages/core/src/skill.ts', 'packages/core/src/skill/instructions.ts', 'packages/core/src/util/xml.ts', 'packages/core/test/tool-skill.test.ts', 'packages/core/test/skill/instructions.test.ts'], 'tests': ['packages/core/test/tool-skill.test.ts', 'packages/core/test/skill/instructions.test.ts'], 'focus': ['bun', 'run', 'script/test.ts', 'test/tool-skill.test.ts', 'test/skill/instructions.test.ts', '-t', 'preserves skill metadata when XML context is parsed|preserves metadata in initial and added skill XML'], 'suite': ['bun', 'run', 'script/test.ts', 'test/tool-skill.test.ts', 'test/skill/instructions.test.ts', 'test/skill.test.ts', 'test/session-skill.test.ts'], 'marker': 'preserves', 'failures': 2}, 'finish-diagnostic': {'package': 'packages/core', 'files': ['packages/core/src/session/runner/step.ts', 'packages/core/test/session-runner.test.ts'], 'tests': ['packages/core/test/session-runner.test.ts'], 'focus': ['bun', 'run', 'script/test.ts', 'test/session-runner.test.ts', '-t', 'preserves unknown finish diagnostics'], 'suite': ['bun', 'run', 'script/test.ts', 'test/session-runner.test.ts'], 'marker': 'preserves unknown finish diagnostics', 'failures': 3}, 'config-xdg': {'package': 'services/www', 'files': ['services/www/src/docs/content/config.mdx', 'services/www/src/docs/content/instructions.mdx'], 'tests': []}, 'compaction-ceiling': {'package': 'services/www', 'files': ['services/www/src/docs/content/compaction.mdx'], 'tests': []}, 'malformed-glob': {'package': 'packages/core', 'files': ['packages/core/src/ripgrep.ts', 'packages/core/test/ripgrep.test.ts', 'packages/core/test/tool-search.test.ts'], 'tests': ['packages/core/test/ripgrep.test.ts', 'packages/core/test/tool-search.test.ts'], 'focus': ['bun', 'run', 'script/test.ts', 'test/ripgrep.test.ts', 'test/tool-search.test.ts', '-t', 'reports malformed glob'], 'suite': ['bun', 'run', 'script/test.ts', 'test/ripgrep.test.ts', 'test/tool-search.test.ts', 'test/tool-filesystem.test.ts'], 'marker': 'reports malformed glob', 'failures': 2}, 'kimi-provider-icon': {'package': 'packages/ui', 'files': ['packages/ui/src/components/provider-icon.tsx'], 'tests': [], 'kind': 'external-ui'}}\ncase=os.environ['CASE'];recipe=recipes[case]\nassert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()=='8c173a8f3805d8e749d44311054b07e37a1b2ce1'\nassert not subprocess.check_output(['git','status','--porcelain'],text=True).strip()\npatch=base64.b64decode(os.environ['PATCH_BASE64'],validate=True);digest=hashlib.sha256(patch).hexdigest()\nassert digest==os.environ['PATCH_SHA256']\np=proof/'candidate.patch';p.write_bytes(patch)\nrows=subprocess.check_output(['git','apply','--numstat',str(p)],text=True).splitlines()\nassert len(rows)==len(recipe['files']) and {r.split('\\t')[2] for r in rows}==set(recipe['files'])\nsubprocess.run(['git','apply','--check',str(p)],check=True)\nblocks=patch.decode().split('diff --git ')[1:]\nselected=[b for b in blocks if any(b.startswith('a/'+name+' b/'+name+'\\n') for name in recipe['tests'])]\nassert len(selected)==len(recipe['tests'])\n(proof/'tests.patch').write_bytes(''.join('diff --git '+b for b in selected).encode())\n(proof/'recipe.json').write_text(json.dumps(recipe,indent=2))\n(proof/'input.json').write_text(json.dumps({'case':case,'base':'8c173a8f3805d8e749d44311054b07e37a1b2ce1','patch_sha256':digest,'runner':os.environ['RUNNER_OS']},indent=2))\nprint('Guarded',case,digest,recipe['files'])\nPY"
-        },
-        {
-          "name": "Install upstream pinned Bun and unmodified dependencies",
-          "uses": "./.github/actions/setup-bun"
-        },
-        {
-          "name": "Prepare verified native ripgrep before test network guards",
-          "if": "runner.os == 'Linux'",
-          "run": "mkdir -p \"$RUNNER_TEMP/native-tools\"\ncurl --fail --location --max-time 120 https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-unknown-linux-musl.tar.gz --output \"$RUNNER_TEMP/ripgrep.tar.gz\"\necho \"1c9297be4a084eea7ecaedf93eb03d058d6faae29bbc57ecdaf5063921491599  $RUNNER_TEMP/ripgrep.tar.gz\" | sha256sum --check\ntar -xzf \"$RUNNER_TEMP/ripgrep.tar.gz\" --strip-components=1 -C \"$RUNNER_TEMP/native-tools\" ripgrep-15.1.0-x86_64-unknown-linux-musl/rg\n\"$RUNNER_TEMP/native-tools/rg\" --version\necho \"$RUNNER_TEMP/native-tools\" >> \"$GITHUB_PATH\"\n"
-        },
-        {
-          "name": "Run original-source regression and package qualification",
-          "run": "python - <<'PY'\nimport hashlib,json,os,pathlib,re,shutil,subprocess,sys\nroot=pathlib.Path.cwd();proof=pathlib.Path(os.environ['RUNNER_TEMP'])/'contribution-proof';recipe=json.loads((proof/'recipe.json').read_text());case=os.environ['CASE'];package=root/recipe['package'];results=[]\nbun=shutil.which('bun');assert bun\nassert subprocess.check_output([bun,'--version'],text=True).strip()=='1.4.2'\nsubprocess.run(['git','config','--global','user.name','opencode'],check=True)\nsubprocess.run(['git','config','--global','user.email','bot@opencode.ai'],check=True)\ndef run(name,args,cwd=package):\n args=[bun if a=='bun' else a for a in args]\n print('RUN',name,args,flush=True)\n try:\n  p=subprocess.run(args,cwd=cwd,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=1200);code=p.returncode;out=p.stdout\n except subprocess.TimeoutExpired as e:code=124;out=str(e)+'\\n'+str(e.stdout or '')\n (proof/(name+'.log')).write_text(out,encoding='utf-8')\n print('\\n'.join(out.splitlines()[-160:]),flush=True)\n result={'name':name,'args':args,'cwd':str(cwd.relative_to(root)),'exit_code':code};results.append(result)\n return code,out,result\n\ndef capture_docs(prefix):\n for name in recipe['files']:\n  page=name.removeprefix('services/www/src/docs/content/').removesuffix('.mdx')\n  suffix='docs/'+page+'/index.html';label=page.replace('/','-')\n  matches=[p for p in (package/'dist').rglob('*.html') if p.as_posix().endswith(suffix)]\n  for index,p in enumerate(matches):shutil.copyfile(p,proof/f'{prefix}-{label}-{index}.html')\n\nif recipe['tests']:\n subprocess.run(['git','apply','--index',str(proof/'tests.patch')],check=True)\n code,out,result=run('baseline',recipe['focus'])\n should_fail=case!='directory-separator' or os.environ['RUNNER_OS']=='Windows'\n clean=re.sub(r'\\x1b\\[[0-?]*[ -/]*[@-~]','',out)\n forbidden=['Cannot find module','Cannot find package','Unhandled error between tests','Failed to resolve','Test timed out']\n failures=[line for line in clean.splitlines() if '(fail)' in line]\n result['failure_names']=failures\n result['oracle_passed']=(code==1 and len(failures)==recipe['failures'] and all(recipe['marker'] in line for line in failures) and not any(t in clean for t in forbidden)) if should_fail else code==0\n result['expected_regression_failure']=should_fail\n subprocess.run(['git','reset','--hard','HEAD'],check=True)\nelif recipe.get('kind')=='external-ui':\n run('baseline-package-suite',['bun','run','test'])\n run('baseline-typecheck',['bun','typecheck'])\nelse:\n for name,args in [('baseline-typecheck',['bun','typecheck']),('baseline-generated',['bun','run','check:generated']),('baseline-build',['bun','run','build'])]:run(name,args)\n capture_docs('baseline')\n\nsubprocess.run(['git','diff','--exit-code'],check=True)\nsubprocess.run(['git','apply',str(proof/'candidate.patch')],check=True)\nsubprocess.run(['git','add','-N','--',*recipe['files']],check=True)\nsubprocess.run(['git','diff','--check'],check=True)\nactual=subprocess.check_output(['git','diff','--binary','--full-index'])\nassert actual==(proof/'candidate.patch').read_bytes(),'Applied patch identity mismatch'\nidentities={p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in recipe['files']}\nif recipe['tests']:\n run('candidate-focused',recipe['focus'])\n run('candidate-related',recipe['suite'])\n if os.environ['RUNNER_OS']=='Linux':run('candidate-package-suite',['bun','run','test'])\n run('candidate-typecheck',['bun','typecheck'])\nelif recipe.get('kind')=='external-ui':\n run('candidate-package-suite',['bun','run','test'])\n run('candidate-typecheck',['bun','typecheck'])\nelse:\n for name,args in [('candidate-typecheck',['bun','typecheck']),('candidate-generated',['bun','run','check:generated']),('candidate-build',['bun','run','build'])]:run(name,args)\n capture_docs('candidate')\nif os.environ['RUNNER_OS']=='Linux':run('canonical-check',['bun','run','check'],root)\nsubprocess.run(['git','diff','--check'],check=True)\nassert all(hashlib.sha256((root/p).read_bytes()).hexdigest()==v for p,v in identities.items()),'Source changed during checks'\nassert subprocess.check_output(['git','diff','--binary','--full-index'])==(proof/'candidate.patch').read_bytes()\n(proof/'source-sha256.json').write_text(json.dumps(identities,indent=2))\n(proof/'results.json').write_text(json.dumps(results,indent=2))\nfailed=[x for x in results if not x.get('oracle_passed',x['exit_code']==0)]\nprint(json.dumps({'checks':len(results),'failed':failed},indent=2))\nsys.exit(bool(failed))\nPY"
-        },
-        {
-          "name": "Retain evidence even on failure",
-          "if": "always()",
-          "uses": "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
-          "with": {
-            "name": "contribution-${{ inputs.case }}-${{ runner.os }}-${{ github.run_id }}",
-            "path": "${{ runner.temp }}/contribution-proof",
-            "if-no-files-found": "error"
-          }
-        }
-      ]
     }
   }
 }
