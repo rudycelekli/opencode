@@ -1,106 +1,188 @@
-{
-  "name": "qualify-contribution-wave",
-  "run-name": "Qualify ${{ inputs.case }}",
-  "on": {
-    "workflow_dispatch": {
-      "inputs": {
-        "case": {
-          "required": true,
-          "type": "choice",
-          "options": [
-            "webfetch-empty",
-            "command-variant",
-            "directory-separator",
-            "local-provider-docs",
-            "skill-xml",
-            "finish-diagnostic",
-            "config-xdg",
-            "compaction-ceiling",
-            "malformed-glob",
-            "kimi-provider-icon"
-          ]
-        },
-        "patch_base64": {
-          "required": true,
-          "type": "string"
-        },
-        "patch_sha256": {
-          "required": true,
-          "type": "string"
-        }
-      }
-    }
-  },
-  "permissions": {
-    "contents": "read"
-  },
-  "jobs": {
-    "native": {
-      "if": "github.repository == 'rudycelekli/opencode'",
-      "strategy": {
-        "fail-fast": false,
-        "matrix": {
-          "os": "${{ fromJSON(inputs.case == 'directory-separator' && '[\"ubuntu-24.04\",\"windows-2022\"]' || '[\"ubuntu-24.04\"]') }}"
-        }
-      },
-      "runs-on": "${{ matrix.os }}",
-      "timeout-minutes": 45,
-      "defaults": {
-        "run": {
-          "shell": "bash"
-        }
-      },
-      "env": {
-        "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24": "true",
-        "NO_COLOR": "1",
-        "GITHUB_ACTIONS": "false",
-        "CASE": "${{ inputs.case }}"
-      },
-      "steps": [
-        {
-          "name": "Use unchanged LF source",
-          "run": "git config --global core.autocrlf false"
-        },
-        {
-          "uses": "actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5",
-          "with": {
-            "repository": "anomalyco/opencode",
-            "ref": "8c173a8f3805d8e749d44311054b07e37a1b2ce1",
-            "persist-credentials": false
-          }
-        },
-        {
-          "name": "Guard source patch and case allowlist",
-          "env": {
-            "PATCH_BASE64": "${{ inputs.patch_base64 }}",
-            "PATCH_SHA256": "${{ inputs.patch_sha256 }}"
-          },
-          "run": "python - <<'PY'\nimport base64,hashlib,json,os,pathlib,subprocess\nroot=pathlib.Path.cwd(); proof=pathlib.Path(os.environ['RUNNER_TEMP'])/'contribution-proof';proof.mkdir()\nrecipes={'webfetch-empty': {'package': 'packages/core', 'files': ['packages/core/src/tool/plugin/webfetch.ts', 'packages/core/test/tool-webfetch.test.ts'], 'tests': ['packages/core/test/tool-webfetch.test.ts'], 'focus': ['bun', 'run', 'script/test.ts', 'test/tool-webfetch.test.ts', '-t', 'reports when nonempty HTML has no readable text'], 'suite': ['bun', 'run', 'script/test.ts', 'test/tool-webfetch.test.ts'], 'marker': 'reports when nonempty HTML has no readable text', 'failures': 1}, 'command-variant': {'package': 'packages/core', 'files': ['packages/core/src/config/plugin/command.ts', 'packages/core/test/config/command-subagent.test.ts'], 'tests': ['packages/core/test/config/command-subagent.test.ts'], 'focus': ['bun', 'run', 'script/test.ts', 'test/config/command-subagent.test.ts', '-t', 'command reasoning variants'], 'suite': ['bun', 'run', 'script/test.ts', 'test/config/command.test.ts', 'test/config/command-subagent.test.ts'], 'marker': 'command reasoning variants', 'failures': 3}, 'directory-separator': {'package': 'packages/tui', 'files': ['packages/tui/src/component/prompt/autocomplete.tsx', 'packages/tui/test/app-lifecycle.test.tsx'], 'tests': ['packages/tui/test/app-lifecycle.test.tsx'], 'focus': ['bun', 'test', '--timeout', '30000', 'test/app-lifecycle.test.tsx', '-t', '/cd Tab completion'], 'suite': ['bun', 'test', '--timeout', '30000', 'test/prompt/autocomplete.test.ts', 'test/app-lifecycle.test.tsx'], 'marker': '/cd Tab completion', 'failures': 1}, 'local-provider-docs': {'package': 'services/www', 'files': ['services/www/src/docs/content/models.mdx', 'services/www/src/docs/content/providers.mdx', 'services/www/src/docs/content/console/providers.mdx'], 'tests': []}, 'skill-xml': {'package': 'packages/core', 'files': ['packages/core/src/skill.ts', 'packages/core/src/skill/instructions.ts', 'packages/core/src/util/xml.ts', 'packages/core/test/tool-skill.test.ts', 'packages/core/test/skill/instructions.test.ts'], 'tests': ['packages/core/test/tool-skill.test.ts', 'packages/core/test/skill/instructions.test.ts'], 'focus': ['bun', 'run', 'script/test.ts', 'test/tool-skill.test.ts', 'test/skill/instructions.test.ts', '-t', 'preserves skill metadata when XML context is parsed|preserves metadata in initial and added skill XML'], 'suite': ['bun', 'run', 'script/test.ts', 'test/tool-skill.test.ts', 'test/skill/instructions.test.ts', 'test/skill.test.ts', 'test/session-skill.test.ts'], 'marker': 'preserves', 'failures': 2}, 'finish-diagnostic': {'package': 'packages/core', 'files': ['packages/core/src/session/runner/step.ts', 'packages/core/test/session-runner.test.ts'], 'tests': ['packages/core/test/session-runner.test.ts'], 'focus': ['bun', 'run', 'script/test.ts', 'test/session-runner.test.ts', '-t', 'preserves unknown finish diagnostics'], 'suite': ['bun', 'run', 'script/test.ts', 'test/session-runner.test.ts'], 'marker': 'preserves unknown finish diagnostics', 'failures': 3}, 'config-xdg': {'package': 'services/www', 'files': ['services/www/src/docs/content/config.mdx', 'services/www/src/docs/content/instructions.mdx'], 'tests': []}, 'compaction-ceiling': {'package': 'services/www', 'files': ['services/www/src/docs/content/compaction.mdx'], 'tests': []}, 'malformed-glob': {'package': 'packages/core', 'files': ['packages/core/src/ripgrep.ts', 'packages/core/test/ripgrep.test.ts', 'packages/core/test/tool-search.test.ts'], 'tests': ['packages/core/test/ripgrep.test.ts', 'packages/core/test/tool-search.test.ts'], 'focus': ['bun', 'run', 'script/test.ts', 'test/ripgrep.test.ts', 'test/tool-search.test.ts', '-t', 'reports malformed glob'], 'suite': ['bun', 'run', 'script/test.ts', 'test/ripgrep.test.ts', 'test/tool-search.test.ts', 'test/tool-filesystem.test.ts'], 'marker': 'reports malformed glob', 'failures': 2}, 'kimi-provider-icon': {'package': 'packages/ui', 'files': ['packages/ui/src/components/provider-icon.tsx'], 'tests': [], 'kind': 'external-ui'}}\ncase=os.environ['CASE'];recipe=recipes[case]\nassert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()=='8c173a8f3805d8e749d44311054b07e37a1b2ce1'\nassert not subprocess.check_output(['git','status','--porcelain'],text=True).strip()\npatch=base64.b64decode(os.environ['PATCH_BASE64'],validate=True);digest=hashlib.sha256(patch).hexdigest()\nassert digest==os.environ['PATCH_SHA256']\np=proof/'candidate.patch';p.write_bytes(patch)\nrows=subprocess.check_output(['git','apply','--numstat',str(p)],text=True).splitlines()\nassert len(rows)==len(recipe['files']) and {r.split('\\t')[2] for r in rows}==set(recipe['files'])\nsubprocess.run(['git','apply','--check',str(p)],check=True)\nblocks=patch.decode().split('diff --git ')[1:]\nselected=[b for b in blocks if any(b.startswith('a/'+name+' b/'+name+'\\n') for name in recipe['tests'])]\nassert len(selected)==len(recipe['tests'])\n(proof/'tests.patch').write_bytes(''.join('diff --git '+b for b in selected).encode())\n(proof/'recipe.json').write_text(json.dumps(recipe,indent=2))\n(proof/'input.json').write_text(json.dumps({'case':case,'base':'8c173a8f3805d8e749d44311054b07e37a1b2ce1','patch_sha256':digest,'runner':os.environ['RUNNER_OS']},indent=2))\nprint('Guarded',case,digest,recipe['files'])\nPY"
-        },
-        {
-          "name": "Install upstream pinned Bun and unmodified dependencies",
-          "uses": "./.github/actions/setup-bun"
-        },
-        {
-          "name": "Prepare verified native ripgrep before test network guards",
-          "if": "runner.os == 'Linux'",
-          "run": "mkdir -p \"$RUNNER_TEMP/native-tools\"\ncurl --fail --location --max-time 120 https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-unknown-linux-musl.tar.gz --output \"$RUNNER_TEMP/ripgrep.tar.gz\"\necho \"1c9297be4a084eea7ecaedf93eb03d058d6faae29bbc57ecdaf5063921491599  $RUNNER_TEMP/ripgrep.tar.gz\" | sha256sum --check\ntar -xzf \"$RUNNER_TEMP/ripgrep.tar.gz\" --strip-components=1 -C \"$RUNNER_TEMP/native-tools\" ripgrep-15.1.0-x86_64-unknown-linux-musl/rg\n\"$RUNNER_TEMP/native-tools/rg\" --version\necho \"$RUNNER_TEMP/native-tools\" >> \"$GITHUB_PATH\"\n"
-        },
-        {
-          "name": "Run original-source regression and package qualification",
-          "run": "python - <<'PY'\nimport hashlib,json,os,pathlib,re,shutil,subprocess,sys\nroot=pathlib.Path.cwd();proof=pathlib.Path(os.environ['RUNNER_TEMP'])/'contribution-proof';recipe=json.loads((proof/'recipe.json').read_text());case=os.environ['CASE'];package=root/recipe['package'];results=[]\nbun=shutil.which('bun');assert bun\nassert subprocess.check_output([bun,'--version'],text=True).strip()=='1.4.2'\nsubprocess.run(['git','config','--global','user.name','opencode'],check=True)\nsubprocess.run(['git','config','--global','user.email','bot@opencode.ai'],check=True)\ndef run(name,args,cwd=package):\n args=[bun if a=='bun' else a for a in args]\n print('RUN',name,args,flush=True)\n try:\n  p=subprocess.run(args,cwd=cwd,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=1200);code=p.returncode;out=p.stdout\n except subprocess.TimeoutExpired as e:code=124;out=str(e)+'\\n'+str(e.stdout or '')\n (proof/(name+'.log')).write_text(out,encoding='utf-8')\n print('\\n'.join(out.splitlines()[-160:]),flush=True)\n result={'name':name,'args':args,'cwd':str(cwd.relative_to(root)),'exit_code':code};results.append(result)\n return code,out,result\n\ndef capture_docs(prefix):\n for name in recipe['files']:\n  page=name.removeprefix('services/www/src/docs/content/').removesuffix('.mdx')\n  suffix='docs/'+page+'/index.html';label=page.replace('/','-')\n  matches=[p for p in (package/'dist').rglob('*.html') if p.as_posix().endswith(suffix)]\n  for index,p in enumerate(matches):shutil.copyfile(p,proof/f'{prefix}-{label}-{index}.html')\n\nif recipe['tests']:\n subprocess.run(['git','apply','--index',str(proof/'tests.patch')],check=True)\n code,out,result=run('baseline',recipe['focus'])\n should_fail=case!='directory-separator' or os.environ['RUNNER_OS']=='Windows'\n clean=re.sub(r'\\x1b\\[[0-?]*[ -/]*[@-~]','',out)\n forbidden=['Cannot find module','Cannot find package','Unhandled error between tests','Failed to resolve','Test timed out']\n failures=[line for line in clean.splitlines() if '(fail)' in line]\n result['failure_names']=failures\n result['oracle_passed']=(code==1 and len(failures)==recipe['failures'] and all(recipe['marker'] in line for line in failures) and not any(t in clean for t in forbidden)) if should_fail else code==0\n result['expected_regression_failure']=should_fail\n subprocess.run(['git','reset','--hard','HEAD'],check=True)\nelif recipe.get('kind')=='external-ui':\n run('baseline-package-suite',['bun','run','test'])\n run('baseline-typecheck',['bun','typecheck'])\nelse:\n for name,args in [('baseline-typecheck',['bun','typecheck']),('baseline-generated',['bun','run','check:generated']),('baseline-build',['bun','run','build'])]:run(name,args)\n capture_docs('baseline')\n\nsubprocess.run(['git','diff','--exit-code'],check=True)\nsubprocess.run(['git','apply',str(proof/'candidate.patch')],check=True)\nsubprocess.run(['git','add','-N','--',*recipe['files']],check=True)\nsubprocess.run(['git','diff','--check'],check=True)\nactual=subprocess.check_output(['git','diff','--binary','--full-index'])\nassert actual==(proof/'candidate.patch').read_bytes(),'Applied patch identity mismatch'\nidentities={p:hashlib.sha256((root/p).read_bytes()).hexdigest() for p in recipe['files']}\nif recipe['tests']:\n run('candidate-focused',recipe['focus'])\n run('candidate-related',recipe['suite'])\n if os.environ['RUNNER_OS']=='Linux':run('candidate-package-suite',['bun','run','test'])\n run('candidate-typecheck',['bun','typecheck'])\nelif recipe.get('kind')=='external-ui':\n run('candidate-package-suite',['bun','run','test'])\n run('candidate-typecheck',['bun','typecheck'])\nelse:\n for name,args in [('candidate-typecheck',['bun','typecheck']),('candidate-generated',['bun','run','check:generated']),('candidate-build',['bun','run','build'])]:run(name,args)\n capture_docs('candidate')\nif os.environ['RUNNER_OS']=='Linux':run('canonical-check',['bun','run','check'],root)\nsubprocess.run(['git','diff','--check'],check=True)\nassert all(hashlib.sha256((root/p).read_bytes()).hexdigest()==v for p,v in identities.items()),'Source changed during checks'\nassert subprocess.check_output(['git','diff','--binary','--full-index'])==(proof/'candidate.patch').read_bytes()\n(proof/'source-sha256.json').write_text(json.dumps(identities,indent=2))\n(proof/'results.json').write_text(json.dumps(results,indent=2))\nfailed=[x for x in results if not x.get('oracle_passed',x['exit_code']==0)]\nprint(json.dumps({'checks':len(results),'failed':failed},indent=2))\nsys.exit(bool(failed))\nPY"
-        },
-        {
-          "name": "Retain evidence even on failure",
-          "if": "always()",
-          "uses": "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
-          "with": {
-            "name": "contribution-${{ inputs.case }}-${{ runner.os }}-${{ github.run_id }}",
-            "path": "${{ runner.temp }}/contribution-proof",
-            "if-no-files-found": "error"
-          }
-        }
-      ]
-    }
-  }
-}
+name: qualify-directory-review-56516
+on:
+  workflow_dispatch:
+    inputs:
+      patch_base64:
+        required: true
+        type: string
+      patch_sha256:
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  native:
+    if: github.repository == 'rudycelekli/opencode'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 60
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      GITHUB_ACTIONS: 'false'
+      NO_COLOR: '1'
+    steps:
+      - name: Preserve LF before checkout
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          repository: rudycelekli/opencode
+          ref: 088ebed933b5fcedda767ce2e75bd077caa58c3a
+          persist-credentials: false
+      - name: Guard exact reviewed patch and paths
+        env:
+          PATCH_BASE64: ${{ inputs.patch_base64 }}
+          PATCH_SHA256: ${{ inputs.patch_sha256 }}
+        run: |
+          set -euo pipefail
+          git config core.autocrlf false
+          git reset --hard HEAD
+          mkdir -p "$RUNNER_TEMP/proof"
+          test "$(git rev-parse HEAD)" = 088ebed933b5fcedda767ce2e75bd077caa58c3a
+          python3 - <<'PY'
+          import base64, hashlib, os, pathlib, subprocess
+          data = base64.b64decode(os.environ['PATCH_BASE64'], validate=True)
+          expected = 'e11259e45449888e547b4963c0369f6a08ade9e2b42b7677ce327163c342b90a'
+          assert os.environ['PATCH_SHA256'] == expected
+          assert hashlib.sha256(data).hexdigest() == expected
+          root = pathlib.Path(os.environ['RUNNER_TEMP'])
+          patch = root / 'candidate.patch'
+          patch.write_bytes(data)
+          allowed = {'packages/tui/src/component/prompt/autocomplete.tsx', 'packages/tui/test/app-lifecycle.test.tsx'}
+          rows = subprocess.check_output(['git', 'apply', '--numstat', str(patch)], text=True).splitlines()
+          assert len(rows) == 2 and {r.split('\t')[2] for r in rows} == allowed
+          source_before = {}
+          for name in sorted(allowed):
+              exact = subprocess.check_output(['git','cat-file','blob','HEAD:'+name])
+              pathlib.Path(name).write_bytes(exact)
+              source_before[name] = hashlib.sha256(exact).hexdigest()
+          (root/'proof/base-source-sha256.json').write_text(__import__('json').dumps(source_before,indent=2))
+          assert not subprocess.check_output(['git','status','--porcelain'],text=True).strip()
+          blocks = data.decode().split('diff --git ')[1:]
+          tests = [b for b in blocks if any(b.startswith('a/'+name+' b/'+name+'\n') for name in ['packages/tui/test/app-lifecycle.test.tsx'])]
+          assert len(tests) == 1
+          (root / 'tests.patch').write_text(''.join('diff --git '+b for b in tests))
+          subprocess.run(['git', 'apply', '--check', str(patch)], check=True)
+          (root / 'proof/patch.sha256').write_text(expected + '\n')
+          PY
+      - name: Setup upstream pinned Bun and dependencies
+        uses: ./.github/actions/setup-bun
+      - name: Capture exact toolchain
+        run: |
+          set -euo pipefail
+          test "$(bun --version)" = "1.4.2"
+          test "$(node -p "require('./package.json').packageManager.split('@')[1]")" = "1.4.2"
+          git rev-parse HEAD > "$RUNNER_TEMP/proof/base.txt"
+          bun --version > "$RUNNER_TEMP/proof/bun-version.txt"
+          git config --global user.email 'bot@opencode.ai'
+          git config --global user.name 'opencode'
+      - name: Actual published directory completion baseline
+        id: baseline_semantic
+        env:
+          EXPECT_WINDOWS: ${{ runner.os == 'Windows' && '1' || '0' }}
+        run: |
+          set -euo pipefail
+          git apply "$RUNNER_TEMP/tests.patch"
+          bun test --help > "$RUNNER_TEMP/proof/bun-test-help.txt"
+          grep -- '--reporter-outfile=' "$RUNNER_TEMP/proof/bun-test-help.txt"
+          set +e
+          (cd packages/tui && bun test --timeout 30000 test/app-lifecycle.test.tsx -t '/cd Tab completion preserves the directory delimiter' --reporter=junit --reporter-outfile="$RUNNER_TEMP/proof/baseline.junit.xml") > "$RUNNER_TEMP/proof/baseline.log" 2>&1
+          result=$?
+          set -e
+          cat "$RUNNER_TEMP/proof/baseline.log"
+          export BASELINE_EXIT="$result"
+          python3 - <<'PYVALIDATOR'
+          import re, collections
+          import xml.etree.ElementTree as ET
+          
+          def validate(text, report, windows=False, exit_code=0):
+              text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+              root = ET.fromstring(report)
+              cases = list(root.iter("testcase"))
+              selected = [c for c in cases if c.find("skipped") is None]
+              filtered = [c for c in cases if c.find("skipped") is not None]
+              assert not list(root.iter("error"))
+              expected_filtered = [('Ctrl-O is immediate, dismissible, and prunes cached deletions at width %s', '', 'test/app-lifecycle.test.tsx'), ('Ctrl-O is immediate, dismissible, and prunes cached deletions at width %s', '', 'test/app-lifecycle.test.tsx'), ('Ctrl-O retains committed movement of a cached-only session while dismissed', '', 'test/app-lifecycle.test.tsx'), ('Ctrl-O retains committed movement of a cached-only session while refreshing', '', 'test/app-lifecycle.test.tsx'), ('SIGHUP clears title and disposes scoped resources once', '', 'test/app-lifecycle.test.tsx'), ('session lifecycle updates the terminal title and prints the epilogue after cleanup', '', 'test/app-lifecycle.test.tsx'), ('session title generated while an untitled session is loading remains visible', '', 'test/app-lifecycle.test.tsx'), ('vertical session tabs switch to horizontal below readable content width', '', 'test/app-lifecycle.test.tsx'), ('narrow vertical session tabs collapse to a compact rail with the terminal', '', 'test/app-lifecycle.test.tsx'), ('automatic rename refreshes the displayed title before settling, even without a renamed event', '', 'test/app-lifecycle.test.tsx'), ('completes custom Markdown and ordinary fences in a session at width %s', '', 'test/app-lifecycle.test.tsx'), ('completes custom Markdown and ordinary fences in a session at width %s', '', 'test/app-lifecycle.test.tsx'), ('keeps assistant footer metrics current after prepend, same-length refresh, and revert', '', 'test/app-lifecycle.test.tsx'), ('session startup prompt is submitted exactly once', '', 'test/app-lifecycle.test.tsx'), ('home startup prompt is submitted exactly once', '', 'test/app-lifecycle.test.tsx'), ('uses the resolved launch directory for new prompts (fallback: %s)', '', 'test/app-lifecycle.test.tsx'), ('uses the resolved launch directory for new prompts (fallback: %s)', '', 'test/app-lifecycle.test.tsx'), ('error investigations repeatedly seed editable home drafts without creating sessions', '', 'test/app-lifecycle.test.tsx'), ('completed user shell output replaces a partial live read when the final read fails', '', 'test/app-lifecycle.test.tsx'), ('new session inherits the active session model', '', 'test/app-lifecycle.test.tsx'), ('keeps the prompt display stable while a new location catalog loads', '', 'test/app-lifecycle.test.tsx'), ('configured app binding opens settings', '', 'test/app-lifecycle.test.tsx'), ('ctrl+c dismisses autocomplete and shell mode before exiting', '', 'test/app-lifecycle.test.tsx'), ('selection copy and pane management respect manual mode in the prompt and terminal pane', '', 'test/app-lifecycle.test.tsx'), ('selection copy and pane management respect select mode in the prompt and terminal pane', '', 'test/app-lifecycle.test.tsx'), ('execution failure keeps the empty session composer and draft usable at width %s', '', 'test/app-lifecycle.test.tsx'), ('execution failure keeps the empty session composer and draft usable at width %s', '', 'test/app-lifecycle.test.tsx'), ('server plugin failures are visible at width %s (already failed: %s)', '', 'test/app-lifecycle.test.tsx'), ('server plugin failures are visible at width %s (already failed: %s)', '', 'test/app-lifecycle.test.tsx'), ('server plugin failures are visible at width %s (already failed: %s)', '', 'test/app-lifecycle.test.tsx'), ('server plugin failures are visible at width %s (already failed: %s)', '', 'test/app-lifecycle.test.tsx'), ('server plugin failures share one notice and use source names before an ID is known', '', 'test/app-lifecycle.test.tsx'), ('retry countdown updates and clears with the retry lifecycle at width %s', '', 'test/app-lifecycle.test.tsx'), ('retry countdown updates and clears with the retry lifecycle at width %s', '', 'test/app-lifecycle.test.tsx')]
+              actual_filtered = collections.Counter((c.get("name"), c.get("classname"), c.get("file")) for c in filtered)
+              assert actual_filtered == collections.Counter(tuple(x) for x in expected_filtered)
+              assert all(not list(c.iter("failure")) and not list(c.iter("error")) for c in filtered)
+              assert all(x.lower() not in text.lower() for x in ["Cannot find module", "Cannot find package", "Test timed out", "Unhandled error between tests", "error TS", "SyntaxError"])
+              prefix = "/cd Tab completion preserves the directory delimiter for "
+              expected = {prefix+x for x in ["nested", "~", ".."]} if windows else {'/cd Tab completion preserves the directory delimiter for literal\\', '/cd Tab completion preserves the directory delimiter for nested', '/cd Tab completion preserves the directory delimiter for ..', '/cd Tab completion preserves the directory delimiter for ~'}
+
+              assert len(selected) == len(expected) and {c.get("name") for c in selected} == expected
+              assert all(c.get("file") == "test/app-lifecycle.test.tsx" and c.get("classname") == "" for c in selected)
+              failed = {c.get("name") for c in selected if c.find("failure") is not None}
+              assert failed == ({prefix+"~",prefix+".."} if windows else set())
+              assert exit_code == (1 if windows else 0)
+              assert re.findall(r"^\s*(\d+) pass\s*$",text,re.M) == ["1" if windows else "4"]
+              assert re.findall(r"^\s*(\d+) fail\s*$",text,re.M) == ["2" if windows else "0"]
+              assert root.get("tests") == ("37" if windows else "38") and root.get("skipped") == "34"
+              assert root.get("failures") == ("2" if windows else "0")
+              if windows:
+                  for case in selected:
+                      failure = case.find("failure")
+                      if failure is None: continue
+                      detail = "".join(failure.itertext()) + failure.get("message", "")
+                      assert "toBe" in detail and "/cd " in detail
+          import os, pathlib
+          root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'proof'
+          validate((root/'baseline.log').read_text(), (root/'baseline.junit.xml').read_text(), os.environ.get('EXPECT_WINDOWS') == '1', int(os.environ.get('BASELINE_EXIT', '0')))
+          PYVALIDATOR
+          git restore -- packages/tui/test/app-lifecycle.test.tsx
+          git diff --exit-code
+      - name: Apply candidate and verify initial full-index identity
+        id: candidate_apply
+        if: always() && steps.baseline_semantic.outcome == 'success'
+        run: |
+          set -euo pipefail
+          git apply "$RUNNER_TEMP/candidate.patch"
+          git diff --check
+          git diff --binary --full-index > "$RUNNER_TEMP/proof/initial-full-index.patch"
+          cmp "$RUNNER_TEMP/candidate.patch" "$RUNNER_TEMP/proof/initial-full-index.patch"
+          test -z "$(git ls-files --others --exclude-standard)"
+          sha256sum packages/tui/src/component/prompt/autocomplete.tsx packages/tui/test/app-lifecycle.test.tsx > "$RUNNER_TEMP/proof/source-sha256.txt"
+      - name: Focused actual directory completion repeated
+        if: always() && steps.candidate_apply.outcome == 'success'
+        run: |
+          set -euo pipefail
+          (cd packages/tui && bun test --timeout 30000 test/app-lifecycle.test.tsx -t '/cd Tab completion preserves the directory delimiter' --rerun-each 10) 2>&1 | tee "$RUNNER_TEMP/proof/focused.log"
+      - name: Full TUI tests
+        if: always() && steps.candidate_apply.outcome == 'success'
+        run: |
+          set -euo pipefail
+          (cd packages/tui && bun run test) 2>&1 | tee "$RUNNER_TEMP/proof/tui-tests.log"
+      - name: TUI typecheck
+        if: always() && steps.candidate_apply.outcome == 'success'
+        run: |
+          set -euo pipefail
+          (cd packages/tui && bun typecheck) 2>&1 | tee "$RUNNER_TEMP/proof/tui-typecheck.log"
+      - name: Canonical repository check
+        if: always() && steps.candidate_apply.outcome == 'success'
+        run: |
+          set -euo pipefail
+          bun run check 2>&1 | tee "$RUNNER_TEMP/proof/check.log"
+      - name: Verify final deterministic full-index source identity
+        if: always() && steps.candidate_apply.outcome == 'success'
+        run: |
+          set -euo pipefail
+          git diff --binary --full-index > "$RUNNER_TEMP/proof/final-full-index.patch"
+          git status --porcelain=v1 > "$RUNNER_TEMP/proof/final-status.txt"
+          sha256sum packages/tui/src/component/prompt/autocomplete.tsx packages/tui/test/app-lifecycle.test.tsx > "$RUNNER_TEMP/proof/final-source-sha256.txt"
+          sha256sum -c "$RUNNER_TEMP/proof/source-sha256.txt"
+          git diff --check
+          test -z "$(git ls-files --others --exclude-standard)"
+          cmp "$RUNNER_TEMP/proof/initial-full-index.patch" "$RUNNER_TEMP/proof/final-full-index.patch"
+          cmp "$RUNNER_TEMP/candidate.patch" "$RUNNER_TEMP/proof/final-full-index.patch"
+      - name: Retain native evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: directory-review-56516-native-evidence-${{ matrix.os }}
+          path: ${{ runner.temp }}/proof
+          if-no-files-found: error
