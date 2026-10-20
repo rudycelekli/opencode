@@ -103,6 +103,28 @@ const call = (input: typeof WriteTool.Input.Type, id = "call-write") => ({
 const it = testEffect(Layer.empty)
 
 describe("WriteTool", () => {
+  it.live("rejects non-UTF-8 overwrite previews as a tool failure without changing bytes", () =>
+    withTempDir((tmp) => {
+      const fixture = makeWriteFixture()
+      const target = path.join(tmp.path, "legacy.txt")
+      const bytes = Buffer.from([0x62, 0x65, 0x66, 0x6f, 0x72, 0x65, 0xf1])
+      return Effect.promise(() => fs.writeFile(target, bytes)).pipe(
+        Effect.andThen(
+          withTool(tmp.path, fixture, (registry) =>
+            Effect.gen(function* () {
+              expect(yield* executeTool(registry, call({ path: "legacy.txt", content: "after" }))).toMatchObject({
+                status: "error",
+                error: { type: "tool.execution", message: expect.stringContaining("not valid UTF-8") },
+              })
+              expect(yield* Effect.promise(() => fs.readFile(target))).toEqual(bytes)
+              expect(fixture.writes).toEqual([])
+            }),
+          ),
+        ),
+      )
+    }),
+  )
+
   it.live("registers and creates a relative file through FileMutation once", () =>
     withTempDir((tmp) => {
       const fixture = makeWriteFixture()

@@ -381,6 +381,23 @@ describe("PatchTool", () => {
     }),
   )
 
+  it.live("rejects non-UTF-8 deletion previews as a tool failure without removing the file", () =>
+    withTempTool((directory, registry) =>
+      Effect.gen(function* () {
+        const target = path.join(directory, "legacy.txt")
+        const bytes = Buffer.from([0x62, 0x65, 0x66, 0x6f, 0x72, 0x65, 0xf1])
+        yield* Effect.promise(() => fs.writeFile(target, bytes))
+        expect(
+          yield* executeTool(registry, call("*** Begin Patch\n*** Delete File: legacy.txt\n*** End Patch")),
+        ).toMatchObject({
+          status: "error",
+          error: { type: "tool.execution", message: expect.stringContaining("not valid UTF-8") },
+        })
+        expect(yield* Effect.promise(() => fs.readFile(target))).toEqual(bytes)
+      }),
+    ),
+  )
+
   it.live("rejects non-UTF-8 patches before writing any files", () =>
     withTempTool((directory, registry) =>
       Effect.gen(function* () {
