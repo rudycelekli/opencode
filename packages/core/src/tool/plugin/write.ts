@@ -93,10 +93,9 @@ export const Plugin = {
             }).pipe(
               Effect.map((output) => ({ output, content: toModelContent(output) })),
               Effect.mapError((error) =>
-                new ToolFailure({
-                  message: error instanceof FileMutation.InvalidUtf8Error ? error.message : `Unable to write ${input.path}`,
-                  error,
-                }),
+                error instanceof FileMutation.InvalidUtf8Error
+                  ? new ToolFailure({ message: error.message })
+                  : new ToolFailure({ message: `Unable to write ${input.path}`, error }),
               ),
             ),
         }),
