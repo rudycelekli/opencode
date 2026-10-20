@@ -245,6 +245,9 @@ export const Plugin = {
               yield* access.authorizeExternal([target], context)
 
               const original = yield* FileMutation.readText(environment.files, target.absolute).pipe(
+                Effect.catchTag("FileMutation.InvalidUtf8Error", (error) =>
+                  Effect.fail(new ToolFailure({ message: error.message })),
+                ),
                 Effect.catchTag("Environment.NotFound", () =>
                   Effect.fail(new ToolFailure({ message: `File not found: ${input.path}` })),
                 ),

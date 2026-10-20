@@ -1,7 +1,7 @@
 export * as FileMutation from "./file-mutation.js"
 
 import { makeLocationNode } from "@opencode/util/effect/app-node"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import { KeyedMutex } from "./effect/keyed-mutex.js"
 import { FSUtil } from "@opencode/util/fs-util"
 import { Bom } from "@opencode/util/bom"
@@ -42,8 +42,21 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/FileMutation") {}
 
+export class InvalidUtf8Error extends Schema.TaggedError<InvalidUtf8Error>()("FileMutation.InvalidUtf8Error", {
+  path: Schema.String,
+}) {
+  override get message() {
+    return `File is not valid UTF-8: ${this.path}`
+  }
+}
+
 export const readText = Effect.fn("FileMutation.readText")(function* (files: Files, target: string) {
-  return Bom.decodeBytes((yield* files.read(target)).bytes)
+  const content = (yield* files.read(target)).bytes
+  const text = yield* Effect.try({
+    try: () => new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(content),
+    catch: () => new InvalidUtf8Error({ path: target }),
+  })
+  return Bom.split(text)
 })
 
 export const syncTextBom = Effect.fn("FileMutation.syncTextBom")(function* (

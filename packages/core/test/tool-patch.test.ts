@@ -381,6 +381,26 @@ describe("PatchTool", () => {
     }),
   )
 
+  it.live("rejects non-UTF-8 patches before writing any files", () =>
+    withTempTool((directory, registry) =>
+      Effect.gen(function* () {
+        const target = path.join(directory, "legacy.txt")
+        const bytes = Buffer.from([...new TextEncoder().encode("before\n"), 0xd6, 0xd0, 0xce, 0xc4])
+        yield* Effect.promise(() => fs.writeFile(target, bytes))
+        const settled = yield* executeTool(
+          registry,
+          call("*** Begin Patch\n*** Add File: new.txt\n+new\n*** Update File: legacy.txt\n@@\n-before\n+after\n*** End Patch"),
+        )
+        expect(settled).toMatchObject({
+          status: "error",
+          error: { type: "tool.execution", message: expect.stringContaining("not valid UTF-8") },
+        })
+        expect(yield* Effect.promise(() => fs.readFile(target))).toEqual(bytes)
+        expect(yield* exists(path.join(directory, "new.txt"))).toBe(false)
+      }),
+    ),
+  )
+
   it.live("moves and updates a file", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),

@@ -186,6 +186,51 @@ describe("EditTool", () => {
     }),
   )
 
+  it.live("edits valid UTF-8 containing replacement characters without losing its BOM", () =>
+    withTempDir((tmp) => {
+      const edit = makeEditFixture()
+      const target = path.join(tmp.path, "unicode.txt")
+      return Effect.promise(() => fs.writeFile(target, "\uFEFFbefore\n中文 ñ �\n")).pipe(
+        Effect.andThen(
+          withTool(tmp.path, edit, (registry) =>
+            Effect.gen(function* () {
+              expect(
+                yield* executeTool(registry, call({ path: "unicode.txt", oldString: "before", newString: "after" })),
+              ).toMatchObject({ status: "completed" })
+              expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe("\uFEFFafter\n中文 ñ �\n")
+            }),
+          ),
+        ),
+      )
+    }),
+  )
+
+  for (const suffix of [[0xd6, 0xd0, 0xce, 0xc4], [0xf1], [0xe2, 0x82]]) {
+    it.live(`rejects non-UTF-8 edits without changing bytes (${suffix.join("-")})`, () =>
+      withTempDir((tmp) => {
+        const edit = makeEditFixture()
+        const target = path.join(tmp.path, "legacy.txt")
+        const bytes = Buffer.from([...new TextEncoder().encode("before\n"), ...suffix])
+        return Effect.promise(() => fs.writeFile(target, bytes)).pipe(
+          Effect.andThen(
+            withTool(tmp.path, edit, (registry) =>
+              Effect.gen(function* () {
+                expect(
+                  yield* executeTool(registry, call({ path: "legacy.txt", oldString: "before", newString: "after" })),
+                ).toMatchObject({
+                  status: "error",
+                  error: { type: "tool.execution", message: expect.stringContaining("not valid UTF-8") },
+                })
+                expect(yield* Effect.promise(() => fs.readFile(target))).toEqual(bytes)
+                expect(edit.writes).toEqual([])
+              }),
+            ),
+          ),
+        )
+      }),
+    )
+  }
+
   it.live("returns the diff for final formatted content", () =>
     withTempDir((tmp) => {
       const edit = makeEditFixture()
