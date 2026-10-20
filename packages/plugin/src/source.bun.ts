@@ -1,5 +1,5 @@
 import { createRequire } from "node:module"
-import { readFileSync } from "node:fs"
+import { readFileSync, realpathSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { Host } from "./host.js"
@@ -10,7 +10,7 @@ import { missingPackageTarget } from "./source.package.js"
 let generation = Date.now()
 
 export async function prepareSource(entrypoint: string, track: (file: string, directory?: boolean) => void) {
-  const root = fileURLToPath(entrypoint)
+  const root = realpathSync(fileURLToPath(entrypoint))
   const files = new Set<string>()
   const visit = (file: string, search = "") => {
     if (file !== root && file.split(path.sep).includes("node_modules")) return
