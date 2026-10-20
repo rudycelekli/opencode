@@ -169,7 +169,8 @@ export const Plugin = {
                     try: () => Patch.derive(hunk.path, hunk.chunks, original),
                     catch: (error) => new ToolFailure({ message: `patch verification failed: ${errorMessage(error)}` }),
                   })
-                  const moveTarget = hunk.movePath ? yield* resolveTarget(hunk.movePath) : undefined
+                  const destination = hunk.movePath ? yield* resolveTarget(hunk.movePath) : undefined
+                  const moveTarget = destination?.absolute === target.absolute ? undefined : destination
                   prepared.push({
                     ...hunk,
                     target,

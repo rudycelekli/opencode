@@ -381,6 +381,31 @@ describe("PatchTool", () => {
     }),
   )
 
+  for (const destination of ["same.txt", "./same.txt", "absolute"]) {
+    it.live(`keeps an updated file when the move destination is the same path (${destination})`, () =>
+      withTempTool((directory, registry) =>
+        Effect.gen(function* () {
+          const target = path.join(directory, "same.txt")
+          yield* Effect.promise(() => fs.writeFile(target, "before\n"))
+          const move = destination === "absolute" ? target : destination
+          const settled = yield* executeTool(
+            registry,
+            call(`*** Begin Patch\n*** Update File: same.txt\n*** Move to: ${move}\n@@\n-before\n+after\n*** End Patch`),
+          )
+          expect(settled.status).toBe("completed")
+          expect(yield* exists(target)).toBe(true)
+          expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe("after\n")
+          if (settled.status !== "completed") return
+          expect(settled.output).toMatchObject({
+            applied: [{ type: "update", resource: "same.txt" }],
+            files: [{ file: "same.txt", status: "modified", additions: 1, deletions: 1 }],
+          })
+          expect(assertions.map((input) => input.resources)).toEqual([["same.txt"]])
+        }),
+      ),
+    )
+  }
+
   it.live("moves and updates a file", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
