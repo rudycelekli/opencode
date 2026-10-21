@@ -1352,6 +1352,7 @@ test("desktop review comments suggest workspace file mentions", async ({ page })
     fileContent: () => ({ type: "text", content: "export const value = 'after'\n" }),
     findFiles: (input) => {
       searches.push(input.query)
+
       return input.query === "READ" ? [fileNode(directory, "README.md")] : []
     },
   })
