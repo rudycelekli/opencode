@@ -23,9 +23,14 @@ const it = testEffect(
   ]),
 )
 
-// Optional local native integration; the qualification job requires both tools
-// and therefore cannot treat their absence as a successful regression oracle.
-describe.skipIf(!Bun.which("cargo") || !Bun.which("rustfmt"))("native Rustfmt discovery", () => {
+// The test runner isolates HOME, so a rustup shim can exist without an available
+// toolchain. Qualification explicitly supplies the installed toolchain home.
+const native = ["cargo", "rustfmt"].every((command) => {
+  const bin = Bun.which(command)
+  return bin !== null && Bun.spawnSync([bin, "--version"], { env: { ...process.env, RUSTUP_AUTO_INSTALL: "0" } }).exitCode === 0
+})
+
+describe.skipIf(!native)("native Rustfmt discovery", () => {
   for (const mode of ["manifest", "workspace", "target", "standalone"] as const) {
     it.live(`resolves the Rust language edition for each requested file ${mode}`, () =>
       Effect.gen(function* () {
