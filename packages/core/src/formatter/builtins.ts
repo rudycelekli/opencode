@@ -160,9 +160,10 @@ export function make(input: {
       if (!bin) return disabled
       for (const config of ["pyproject.toml", "ruff.toml", ".ruff.toml"]) {
         const found = yield* findUp(config)
-        if (!found.length) continue
-        if (config !== "pyproject.toml" || (yield* readText(found[0])).includes("[tool.ruff]")) {
-          return [bin, "format", "$FILE"]
+        for (const file of found) {
+          if (config !== "pyproject.toml" || (yield* readText(file)).includes("[tool.ruff]")) {
+            return [bin, "format", "$FILE"]
+          }
         }
       }
       for (const dependency of ["requirements.txt", "pyproject.toml", "Pipfile"]) {
