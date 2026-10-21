@@ -52,6 +52,7 @@ export const Plugin = define({
           environment: { ...builtIn?.environment, ...entry.environment },
           enabled:
             builtIn && !entry.command ? builtIn.enabled : Effect.succeed(entry.command ? [...entry.command] : false),
+          resolve: builtIn && !entry.command ? builtIn.resolve : undefined,
         }
         editor.set(current)
       }

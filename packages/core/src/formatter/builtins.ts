@@ -1,4 +1,5 @@
-import { Effect } from "effect"
+import { Effect, Option, Schema } from "effect"
+import path from "path"
 import { ChildProcess } from "effect/process"
 import { FSUtil } from "@opencode/util/fs-util"
 import { Npm } from "@opencode/util/npm"
@@ -10,6 +11,7 @@ export interface Info {
   readonly environment?: Record<string, string>
   readonly extensions: readonly string[]
   readonly enabled: Effect.Effect<string[] | false>
+  readonly resolve?: (filepath: string, command: string[]) => Effect.Effect<string[]>
 }
 
 export function make(input: {
@@ -217,7 +219,39 @@ export function make(input: {
   const gleam = executable("gleam", [".gleam"], ["format", "$FILE"], findExecutable)
   const shfmt = executable("shfmt", [".sh", ".bash"], ["-w", "$FILE"], findExecutable)
   const nixfmt = executable("nixfmt", [".nix"], ["$FILE"], findExecutable)
-  const rustfmt = executable("rustfmt", [".rs"], ["$FILE"], findExecutable)
+  const rustfmt: Info = {
+    ...executable("rustfmt", [".rs"], ["$FILE"], findExecutable),
+    resolve: (filepath, command) =>
+      Effect.gen(function* () {
+        const cargo = findExecutable("cargo")
+        if (!cargo) return command
+        const manifests = yield* input.fs.findUp("Cargo.toml", path.dirname(filepath), input.worktree)
+        const manifest = manifests[0]
+        if (!manifest) return command
+        const output = yield* input.processes.run(
+          ChildProcess.make(
+            cargo,
+            ["metadata", "--manifest-path", manifest, "--no-deps", "--format-version", "1", "--offline", "--locked"],
+            {
+              cwd: path.dirname(manifest),
+              env: { RUSTUP_AUTO_INSTALL: "0" },
+              extendEnv: true,
+              stdin: "ignore",
+            },
+          ),
+          { timeout: "5 seconds", maxOutputBytes: 1024 * 1024, maxErrorBytes: 64 * 1024 },
+        )
+        if (output.exitCode !== 0 || output.stdoutTruncated) return command
+        const metadata = decodeCargoMetadata(output.stdout.toString("utf8"))
+        if (Option.isNone(metadata)) return command
+        const target = yield* input.fs.resolve(manifest)
+        for (const item of metadata.value.packages) {
+          if ((yield* input.fs.resolve(item.manifest_path)) !== target) continue
+          return [command[0], "--edition", item.edition, ...command.slice(1)]
+        }
+        return command
+      }).pipe(Effect.orElseSucceed(() => command)),
+  }
 
   const pint: Info = {
     name: "pint",
@@ -295,3 +329,16 @@ function hasRecordKey(input: unknown, field: string, key: string) {
 function isRecord(input: unknown): input is Record<string, unknown> {
   return Boolean(input && typeof input === "object" && !Array.isArray(input))
 }
+
+const decodeCargoMetadata = Schema.decodeUnknownOption(
+  Schema.fromJsonString(
+    Schema.Struct({
+      packages: Schema.Array(
+        Schema.Struct({
+          manifest_path: Schema.String,
+          edition: Schema.Literals(["2015", "2018", "2021", "2024"]),
+        }),
+      ),
+    }),
+  ),
+)

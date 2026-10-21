@@ -60,7 +60,8 @@ const layer = Layer.effect(
       for (const formatter of matching) {
         const enabled = yield* command(formatter)
         if (enabled === false) continue
-        const cmd = enabled.map((argument) => argument.replace("$FILE", filepath))
+        const resolved = formatter.resolve ? yield* formatter.resolve(filepath, enabled) : enabled
+        const cmd = resolved.map((argument) => argument.replace("$FILE", filepath))
         yield* Effect.logInfo("formatting file", { file: filepath, command: cmd })
         const result = yield* processes
           .run(
