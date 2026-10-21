@@ -1,27 +1,19 @@
 {
-  "name": "qualify-dual-oct20",
-  "run-name": "Oct20 qualify ${{ inputs.case }}",
+  "name": "Oct20 UI diagnostic probes",
   "on": {
     "workflow_dispatch": {
       "inputs": {
         "case": {
-          "required": true,
-          "type": "choice",
-          "options": [
-            "patch-same-path",
-            "plugin-symlink-cache",
-            "utf8-mutation",
-            "compaction-current",
-            "history-current"
-          ]
+          "type": "string",
+          "required": false
         },
         "patch_base64": {
-          "required": true,
-          "type": "string"
+          "type": "string",
+          "required": false
         },
         "patch_sha256": {
-          "required": true,
-          "type": "string"
+          "type": "string",
+          "required": false
         }
       }
     }
@@ -30,37 +22,24 @@
     "contents": "read"
   },
   "jobs": {
-    "native": {
+    "probe": {
       "if": "github.repository == 'rudycelekli/opencode'",
-      "runs-on": "${{ matrix.os }}",
-      "strategy": {
-        "fail-fast": false,
-        "matrix": {
-          "os": "${{ fromJSON(inputs.case == 'plugin-symlink-cache' && '[\"ubuntu-24.04\",\"windows-2022\"]' || '[\"ubuntu-24.04\"]') }}"
-        }
-      },
-      "timeout-minutes": 40,
-      "defaults": {
-        "run": {
-          "shell": "bash"
-        }
-      },
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 35,
       "env": {
-        "CASE": "${{ inputs.case }}",
-        "NO_COLOR": "1",
+        "CI": "true",
         "GITHUB_ACTIONS": "false",
+        "NO_COLOR": "1",
+        "PLAYWRIGHT_STORYBOOK_PORT": "6107",
+        "PLAYWRIGHT_BROWSERS_PATH": "${{ github.workspace }}/.playwright-browsers",
         "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24": "true"
       },
       "steps": [
         {
-          "name": "Preserve LF source",
-          "run": "git config --global core.autocrlf false"
-        },
-        {
           "uses": "actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5",
           "with": {
             "repository": "anomalyco/opencode",
-            "ref": "0718864d49a5241e7df5b302b35caed2518171a0",
+            "ref": "c600cddc68f1c5488448d6410b1b248489bc00f8",
             "persist-credentials": false
           }
         },
@@ -68,25 +47,33 @@
           "uses": "./.github/actions/setup-bun"
         },
         {
-          "name": "Prepare pinned native ripgrep",
-          "if": "runner.os == 'Linux'",
-          "run": "mkdir -p \"$RUNNER_TEMP/native-tools\"\ncurl --fail --location --max-time 120 https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-unknown-linux-musl.tar.gz --output \"$RUNNER_TEMP/ripgrep.tar.gz\"\necho \"1c9297be4a084eea7ecaedf93eb03d058d6faae29bbc57ecdaf5063921491599  $RUNNER_TEMP/ripgrep.tar.gz\" | sha256sum --check\ntar -xzf \"$RUNNER_TEMP/ripgrep.tar.gz\" --strip-components=1 -C \"$RUNNER_TEMP/native-tools\" ripgrep-15.1.0-x86_64-unknown-linux-musl/rg\necho \"$RUNNER_TEMP/native-tools\" >> \"$GITHUB_PATH\""
+          "name": "Pin browser installer Node to upstream documented compatible version",
+          "uses": "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020",
+          "with": {
+            "node-version": "24.15"
+          }
         },
         {
-          "name": "Qualify exact source and regression",
+          "name": "Install Chromium with system dependencies",
+          "working-directory": "packages/app",
+          "run": "bunx playwright install --with-deps chromium"
+        },
+        {
+          "name": "Run real component diagnostic probes",
           "env": {
-            "PATCH_BASE64": "${{ inputs.patch_base64 }}",
-            "PATCH_SHA256": "${{ inputs.patch_sha256 }}"
+            "BASE": "c600cddc68f1c5488448d6410b1b248489bc00f8",
+            "PROBE_PATCH": "ZGlmZiAtLWdpdCBhL3BhY2thZ2VzL3Nlc3Npb24tdWkvY29tcG9uZW50LXRlc3RzL3Byb2JlLW1hcmtkb3duLnNwZWMudHMgYi9wYWNrYWdlcy9zZXNzaW9uLXVpL2NvbXBvbmVudC10ZXN0cy9wcm9iZS1tYXJrZG93bi5zcGVjLnRzCm5ldyBmaWxlIG1vZGUgMTAwNjQ0CmluZGV4IDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAuLmZkYzE1NDg0ZTFjZTQ4YzhjOWEwYzQxZDJjODdmM2QzMTA4MzgxNzIKLS0tIC9kZXYvbnVsbAorKysgYi9wYWNrYWdlcy9zZXNzaW9uLXVpL2NvbXBvbmVudC10ZXN0cy9wcm9iZS1tYXJrZG93bi5zcGVjLnRzCkBAIC0wLDAgKzEsNTYgQEAKK2ltcG9ydCB7IGV4cGVjdCwgc291cmNlVVJMLCBzdG9yeSB9IGZyb20gIi4uLy4uL3N0b3J5Ym9vay9wbGF5d3JpZ2h0L3N0b3J5IgorCitjb25zdCBmaXh0dXJlID0gc291cmNlVVJMKG5ldyBVUkwoIi4vbWFya2Rvd24uZml4dHVyZS50c3giLCBpbXBvcnQubWV0YS51cmwpKQorCitzdG9yeS5iZWZvcmVFYWNoKGFzeW5jICh7IG1vdW50IH0pID0+IHsKKyAgY29uc3Qgcm9vdCA9IGF3YWl0IG1vdW50KCJjb21wb25lbnRzLW1hcmtkb3duLS1jb21wbGV0ZS1yZXNwb25zZSIpCisgIGF3YWl0IGV4cGVjdChyb290LmxvY2F0b3IoJ1tkYXRhLWNvbXBvbmVudD0ibWFya2Rvd24iXScpKS50b0hhdmVBdHRyaWJ1dGUoImRhdGEtbWFya2Rvd24tcmVhZHkiLCAiIikKK30pCisKK2ZvciAoY29uc3Qgc3RyZWFtaW5nIG9mIFtmYWxzZSwgdHJ1ZV0pIHsKKyAgc3RvcnkoYGNvcGllcyBjb21wbGV0ZSBsb25nIGNvZGUgYmVmb3JlIGhvcml6b250YWwgc2Nyb2xsaW5nICgke3N0cmVhbWluZyA/ICJzdHJlYW1lZCIgOiAiY2FjaGVkIn0pYCwgYXN5bmMgKHsgcGFnZSB9KSA9PiB7CisgICAgY29uc3QgY29udGVudCA9IGBjb25zdCB2YWx1ZSA9ICIkeyJhIi5yZXBlYXQoMjE4NCl9ImAKKyAgICBhd2FpdCBwYWdlLmV2YWx1YXRlKGFzeW5jICh7IGZpeHR1cmUsIGNvbnRlbnQsIHN0cmVhbWluZyB9KSA9PiB7CisgICAgICBjb25zdCB7IG1vdW50TWFya2Rvd24gfSA9IGF3YWl0IGltcG9ydChmaXh0dXJlKQorICAgICAgYXdhaXQgbW91bnRNYXJrZG93bih7IHRleHQ6ICJgYGBqc1xuIiArIChzdHJlYW1pbmcgPyBjb250ZW50LnNsaWNlKDAsIDkyOSkgOiBjb250ZW50ICsgIlxuYGBgIiksIHN0cmVhbWluZywgY2FjaGVkOiAhc3RyZWFtaW5nIH0pCisgICAgfSwgeyBmaXh0dXJlLCBjb250ZW50LCBzdHJlYW1pbmcgfSkKKyAgICBjb25zdCBoYXJuZXNzID0gcGFnZS5nZXRCeVRlc3RJZCgibWFya2Rvd24tZml4dHVyZSIpCisgICAgY29uc3QgbWFya2Rvd24gPSBoYXJuZXNzLmxvY2F0b3IoJ1tkYXRhLWNvbXBvbmVudD0ibWFya2Rvd24iXScpCisgICAgaWYgKHN0cmVhbWluZykgeworICAgICAgYXdhaXQgZXhwZWN0KG1hcmtkb3duLmxvY2F0b3IoInByZSBjb2RlIikpLnRvSGF2ZVRleHQoY29udGVudC5zbGljZSgwLCA5MjkpKQorICAgICAgYXdhaXQgaGFybmVzcy5nZXRCeUxhYmVsKCJNYXJrZG93biB0ZXh0IikuZmlsbCgiYGBganNcbiIgKyBjb250ZW50ICsgIlxuYGBgIikKKyAgICAgIGF3YWl0IGhhcm5lc3MuZ2V0QnlMYWJlbCgiU3RyZWFtaW5nIikudW5jaGVjaygpCisgICAgfQorICAgIGF3YWl0IGV4cGVjdChtYXJrZG93bikudG9IYXZlQXR0cmlidXRlKCJkYXRhLW1hcmtkb3duLXJlYWR5IiwgIiIpCisgICAgYXdhaXQgZXhwZWN0KG1hcmtkb3duLmxvY2F0b3IoInByZSBjb2RlIikpLnRvSGF2ZVRleHQoY29udGVudCkKKyAgICBhd2FpdCBwYWdlLmNvbnRleHQoKS5ncmFudFBlcm1pc3Npb25zKFsiY2xpcGJvYXJkLXJlYWQiLCAiY2xpcGJvYXJkLXdyaXRlIl0pCisgICAgYXdhaXQgbWFya2Rvd24uZ2V0QnlSb2xlKCJidXR0b24iLCB7IG5hbWU6ICJDb3B5IiwgZXhhY3Q6IHRydWUgfSkuY2xpY2soKQorICAgIGF3YWl0IGV4cGVjdChtYXJrZG93bi5nZXRCeVJvbGUoImJ1dHRvbiIsIHsgbmFtZTogIkNvcGllZCIsIGV4YWN0OiB0cnVlIH0pKS50b0JlVmlzaWJsZSgpCisgICAgZXhwZWN0KChhd2FpdCBwYWdlLmV2YWx1YXRlKCgpID0+IG5hdmlnYXRvci5jbGlwYm9hcmQucmVhZFRleHQoKSkpLnJlcGxhY2VBbGwoIlxyXG4iLCAiXG4iKS50cmltRW5kKCkpLnRvQmUoY29udGVudCkKKyAgfSkKK30KKworc3RvcnkoInJldGFpbnMgQ0pLIGFuZCBudW1lcmljIGlubGluZSBjb2RlIHRleHQiLCBhc3luYyAoeyBwYWdlIH0pID0+IHsKKyAgY29uc3QgY29udGVudCA9ICLlrozmlbTlronoo4XmraXpqqTop4Hlt6XkvZzml6Xlv5cgYDIwMjYtMTAtMTggMTY6NDNgIOadoeebruOAguimgeeCue+8mumcgCAqKkpESyAxNyoq44CC5paH5Lu2IGB1bmlkYmctYm9vdC1zZXJ2ZXItMC4wLjYuamFyYOOAgiIKKyAgYXdhaXQgcGFnZS5ldmFsdWF0ZShhc3luYyAoeyBmaXh0dXJlLCBjb250ZW50IH0pID0+IHsKKyAgICBjb25zdCB7IG1vdW50TWFya2Rvd24gfSA9IGF3YWl0IGltcG9ydChmaXh0dXJlKQorICAgIGF3YWl0IG1vdW50TWFya2Rvd24oeyB0ZXh0OiBjb250ZW50LCBjYWNoZWQ6IHRydWUgfSkKKyAgfSwgeyBmaXh0dXJlLCBjb250ZW50IH0pCisgIGNvbnN0IG1hcmtkb3duID0gcGFnZS5nZXRCeVRlc3RJZCgibWFya2Rvd24tZml4dHVyZSIpLmxvY2F0b3IoJ1tkYXRhLWNvbXBvbmVudD0ibWFya2Rvd24iXScpCisgIGF3YWl0IGV4cGVjdChtYXJrZG93bi5sb2NhdG9yKCJwIikpLnRvSGF2ZVRleHQoIuWujOaVtOWuieijheatpemqpOingeW3peS9nOaXpeW/lyAyMDI2LTEwLTE4IDE2OjQzIOadoeebruOAguimgeeCue+8mumcgCBKREsgMTfjgILmlofku7YgdW5pZGJnLWJvb3Qtc2VydmVyLTAuMC42LmphcuOAgiIpCit9KQorCitzdG9yeSgicmVzb2x2ZXMgbmVzdGVkIFJUTCBtYXJrZG93biBibG9ja3MgaW5kZXBlbmRlbnRseSBvZiBhbiBFbmdsaXNoIGhlYWRpbmciLCBhc3luYyAoeyBwYWdlIH0sIHRlc3RJbmZvKSA9PiB7CisgIGNvbnN0IGNvbnRlbnQgPSAiIyMgUHJvamVjdCBzZXR1cFxuXG5SdW4gYG5wbSBpbnN0YWxsYCBmaXJzdC5cblxuLSDar9in2YUg2KfZiNmEOiDYr9in2YbZhNmI2K8g2KfYqNiy2KfYsVxuXG4+INiq2YjYrNmHOiDYp9uM2YYg2YXYsdit2YTZhyDYsdinINin2KzYsdinINqp2YbbjNivLlxuXG58INmG2KfZhSB8INmF2YLYr9in2LEgfFxufC0tLS0tfC0tLS0tLS18XG58INmG2LPYrtmHIHwg2KLYstmF2KfbjNi024wgfCIKKyAgYXdhaXQgcGFnZS5ldmFsdWF0ZShhc3luYyAoeyBmaXh0dXJlLCBjb250ZW50IH0pID0+IHsKKyAgICBjb25zdCB7IG1vdW50TWFya2Rvd24gfSA9IGF3YWl0IGltcG9ydChmaXh0dXJlKQorICAgIGF3YWl0IG1vdW50TWFya2Rvd24oeyB0ZXh0OiBjb250ZW50LCBjYWNoZWQ6IHRydWUgfSkKKyAgfSwgeyBmaXh0dXJlLCBjb250ZW50IH0pCisgIGNvbnN0IG1hcmtkb3duID0gcGFnZS5nZXRCeVRlc3RJZCgibWFya2Rvd24tZml4dHVyZSIpLmxvY2F0b3IoJ1tkYXRhLWNvbXBvbmVudD0ibWFya2Rvd24iXScpCisgIGF3YWl0IGV4cGVjdChtYXJrZG93bikudG9IYXZlQXR0cmlidXRlKCJkYXRhLW1hcmtkb3duLXJlYWR5IiwgIiIpCisgIGF3YWl0IHBhZ2Uuc2NyZWVuc2hvdCh7IHBhdGg6IHRlc3RJbmZvLm91dHB1dFBhdGgoInJ0bC1sYXlvdXQucG5nIikgfSkKKyAgY29uc3Qgc3R5bGVzID0gYXdhaXQgbWFya2Rvd24ubG9jYXRvcigibGksIGJsb2NrcXVvdGUgcCwgdGgsIHRkIikuZXZhbHVhdGVBbGwoKG5vZGVzKSA9PiBub2Rlcy5tYXAoKG5vZGUpID0+ICh7IHRhZzogbm9kZS50YWdOYW1lLCBiaWRpOiBnZXRDb21wdXRlZFN0eWxlKG5vZGUpLnVuaWNvZGVCaWRpIH0pKSkKKyAgZXhwZWN0KHN0eWxlcy5sZW5ndGgpLnRvQmVHcmVhdGVyVGhhbk9yRXF1YWwoNikKKyAgZXhwZWN0KHN0eWxlcy5tYXAoKHN0eWxlKSA9PiBzdHlsZS5iaWRpKSkudG9FcXVhbChzdHlsZXMubWFwKCgpID0+ICJwbGFpbnRleHQiKSkKKyAgYXdhaXQgZXhwZWN0KG1hcmtkb3duLmxvY2F0b3IoImNvZGUiKSkudG9IYXZlQ1NTKCJ1bmljb2RlLWJpZGkiLCAiaXNvbGF0ZSIpCit9KQo=",
+            "PATCH_SHA256": "c7bbf9281857c6e4601b08de133952bc657a493c6c4d8f042f5d9c5448cb7f33"
           },
-          "run": "python - <<'PY'\nimport base64,hashlib,json,os,pathlib,subprocess,re,sys\nroot=pathlib.Path.cwd();proof=pathlib.Path(os.environ['RUNNER_TEMP'])/'dual-proof';proof.mkdir()\nrecipes={'patch-same-path': {'package': 'packages/core', 'files': ['packages/core/src/tool/plugin/patch.ts', 'packages/core/test/tool-patch.test.ts'], 'tests': ['packages/core/test/tool-patch.test.ts'], 'focus': ['bun', 'run', 'script/test.ts', 'test/tool-patch.test.ts', '-t', 'keeps an updated file when the move destination is the same path'], 'related': ['bun', 'run', 'script/test.ts', 'test/tool-patch.test.ts'], 'failures': 3, 'marker': 'keeps an updated file when the move destination is the same path'}, 'plugin-symlink-cache': {'package': 'packages/plugin', 'files': ['packages/plugin/src/source.bun.ts', 'packages/plugin/test/source.test.ts'], 'tests': ['packages/plugin/test/source.test.ts'], 'focus': ['bun', 'test', 'test/source.test.ts'], 'related': ['bun', 'run', 'test'], 'failures': 1, 'marker': 'reloads a changed standalone plugin through a symlinked'}, 'utf8-mutation': {'package': 'packages/core', 'files': ['packages/core/src/file-mutation.ts', 'packages/core/src/tool/plugin/edit.ts', 'packages/core/src/tool/plugin/write.ts', 'packages/core/test/tool-edit.test.ts', 'packages/core/test/tool-patch.test.ts', 'packages/core/test/tool-write.test.ts'], 'tests': ['packages/core/test/tool-edit.test.ts', 'packages/core/test/tool-patch.test.ts', 'packages/core/test/tool-write.test.ts'], 'focus': ['bun', 'run', 'script/test.ts', 'test/tool-edit.test.ts', 'test/tool-patch.test.ts', 'test/tool-write.test.ts', '-t', 'rejects non-UTF-8'], 'related': ['bun', 'run', 'script/test.ts', 'test/tool-edit.test.ts', 'test/tool-patch.test.ts', 'test/tool-write.test.ts'], 'failures': 6, 'marker': 'rejects non-UTF-8'}, 'compaction-current': {'package': 'services/www', 'files': ['services/www/src/docs/content/compaction.mdx'], 'tests': [], 'docs': True}, 'history-current': {'package': 'packages/tui', 'files': ['packages/tui/src/component/prompt/autocomplete.tsx', 'packages/tui/src/component/prompt/index.tsx', 'packages/tui/src/prompt/history.tsx', 'packages/tui/test/prompt/history-workspace.test.ts', 'packages/tui/test/prompt/history.test.ts'], 'tests': ['packages/tui/test/prompt/history-workspace.test.ts'], 'focus': ['bun', 'test', '--timeout', '30000', 'test/prompt/history-workspace.test.ts'], 'related': ['bun', 'test', '--timeout', '30000', 'test/prompt/history-workspace.test.ts', 'test/prompt/history.test.ts'], 'failures': 1, 'marker': 'history submits workspace-relative files from the destination workspace'}};recipe=recipes[os.environ['CASE']];package=root/recipe['package'];results=[]\nassert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()=='0718864d49a5241e7df5b302b35caed2518171a0'\nassert subprocess.check_output(['bun','--version'],text=True).strip()=='1.4.2'\nsubprocess.run(['git','config','user.name','opencode'],check=True);subprocess.run(['git','config','user.email','bot@opencode.ai'],check=True)\npatch=base64.b64decode(os.environ['PATCH_BASE64'],validate=True)\nassert hashlib.sha256(patch).hexdigest()==os.environ['PATCH_SHA256']\np=proof/'candidate.patch';p.write_bytes(patch)\nrows=subprocess.check_output(['git','apply','--numstat',str(p)],text=True).splitlines()\nassert {row.split('\\t')[2] for row in rows}==set(recipe['files']) and len(rows)==len(recipe['files'])\nsubprocess.run(['git','apply','--check',str(p)],check=True)\nblocks=patch.decode().split('diff --git ')[1:]\ntests=''.join('diff --git '+b for b in blocks if any(b.startswith('a/'+name+' b/'+name+'\\n') for name in recipe['tests']))\n(proof/'tests.patch').write_bytes(tests.encode())\n(proof/'input.json').write_text(json.dumps({'base':'0718864d49a5241e7df5b302b35caed2518171a0','case':os.environ['CASE'],'runner':os.environ['RUNNER_OS'],'patch_sha256':hashlib.sha256(patch).hexdigest()},indent=2))\ndef run(name,args,cwd=package):\n print('RUN',name,args,flush=True)\n p=subprocess.run(args,cwd=cwd,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=1200)\n (proof/(name+'.log')).write_text(p.stdout,encoding='utf-8')\n row={'name':name,'args':args,'cwd':str(cwd.relative_to(root)),'exit_code':p.returncode};results.append(row)\n (proof/'results.json').write_text(json.dumps(results,indent=2))\n print('\\n'.join(p.stdout.splitlines()[-70:]),flush=True)\n return p.returncode,p.stdout,row\nif recipe.get('docs'):\n for label,args in [('typecheck',['bun','typecheck']),('generated',['bun','run','check:generated']),('build',['bun','run','build'])]: run('baseline-'+label,args)\nelse:\n if os.environ['CASE']=='patch-same-path': run('baseline-package',['bun','run','test'])\n subprocess.run(['git','apply','--index',str(proof/'tests.patch')],check=True)\n code,out,result=run('baseline',recipe['focus'])\n clean=re.sub(r'\\x1b\\[[0-?]*[ -/]*[@-~]','',out);fails=[line for line in clean.splitlines() if '(fail)' in line]\n result['failure_names']=fails\n result['oracle_passed']=code==1 and len(fails)==recipe['failures'] and all(recipe['marker'] in line for line in fails) and not any(x in clean for x in ['Cannot find module','Cannot find package','Unhandled error between tests','Test timed out','Timed out waiting for'])\nsubprocess.run(['git','reset','--hard','HEAD'],check=True)\nsubprocess.run(['git','apply',str(p)],check=True);subprocess.run(['git','add','-N','--',*recipe['files']],check=True)\nassert subprocess.check_output(['git','diff','--binary','--full-index'])==patch\nidentities={name:hashlib.sha256((root/name).read_bytes()).hexdigest() for name in recipe['files']}\nrun('candidate-typecheck',['bun','typecheck'])\nif recipe.get('docs'):\n run('candidate-generated',['bun','run','check:generated']);run('candidate-build',['bun','run','build'])\nelse:\n run('candidate-focused',recipe['focus']);run('candidate-related',recipe['related'])\n if os.environ['RUNNER_OS']=='Linux': run('candidate-package',['bun','run','test'])\nif os.environ['RUNNER_OS']=='Linux': run('canonical-check',['bun','run','check'],root)\nsubprocess.run(['git','diff','--check'],check=True)\nassert subprocess.check_output(['git','diff','--binary','--full-index'])==patch\nassert all(hashlib.sha256((root/name).read_bytes()).hexdigest()==value for name,value in identities.items())\n(proof/'source-sha256.json').write_text(json.dumps(identities,indent=2))\n(proof/'results.json').write_text(json.dumps(results,indent=2))\nsys.exit(any(not row.get('oracle_passed',row['exit_code']==0) for row in results))\nPY"
+          "run": "python - <<'PY'\nimport base64,hashlib,json,os,pathlib,subprocess,sys\nroot=pathlib.Path.cwd();proof=pathlib.Path(os.environ['RUNNER_TEMP'])/'ui-proof';proof.mkdir()\npatch=base64.b64decode(os.environ['PROBE_PATCH'],validate=True)\nassert hashlib.sha256(patch).hexdigest()==os.environ['PATCH_SHA256']\nassert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()==os.environ['BASE']\np=proof/'tests.patch';p.write_bytes(patch)\nsubprocess.run(['git','apply','--check',str(p)],check=True)\nsubprocess.run(['git','apply',str(p)],check=True)\ntest=root/'packages/session-ui/component-tests/probe-markdown.spec.ts'\n(proof/'input.json').write_text(json.dumps({'base':os.environ['BASE'],'patch_sha256':hashlib.sha256(patch).hexdigest(),'test_sha256':hashlib.sha256(test.read_bytes()).hexdigest(),'purpose':'diagnostic only; no production fix or qualification claim'},indent=2))\ncommand=['bun','run','test:components','--','component-tests/probe-markdown.spec.ts','--workers=2','--retries=0']\nresult=subprocess.run(command,cwd=root/'packages/session-ui',stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=1200)\n(proof/'baseline.log').write_text(result.stdout)\n(proof/'results.json').write_text(json.dumps({'command':command,'exit_code':result.returncode,'base':os.environ['BASE']},indent=2))\nprint(result.stdout[-25000:])\nassert hashlib.sha256(test.read_bytes()).hexdigest()==json.loads((proof/'input.json').read_text())['test_sha256']\nsys.exit(result.returncode)\n\nPY"
         },
         {
-          "name": "Retain proof files",
+          "name": "Preserve diagnostic evidence",
           "if": "always()",
           "uses": "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
           "with": {
-            "name": "dual-${{ inputs.case }}-${{ runner.os }}-${{ github.run_id }}",
-            "path": "${{ runner.temp }}/dual-proof/*.json\n${{ runner.temp }}/dual-proof/*.log\n${{ runner.temp }}/dual-proof/*.patch",
+            "name": "ui-wave2-${{ github.run_id }}",
+            "path": "${{ runner.temp }}/ui-proof/*.json\n${{ runner.temp }}/ui-proof/*.log\n${{ runner.temp }}/ui-proof/*.patch\npackages/session-ui/component-tests/test-results/**/*.png\npackages/session-ui/component-tests/test-results/**/*.md",
             "if-no-files-found": "warn"
           }
         }
