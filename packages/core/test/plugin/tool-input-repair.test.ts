@@ -333,6 +333,23 @@ describe("tool input repair plugin", () => {
     }),
   )
 
+  for (const nullable of [
+    { type: ["object", "null"], properties: { count: { type: "integer" } } },
+    { anyOf: [{ type: "object", properties: { count: { type: "integer" } } }, { type: "null" }] },
+  ]) {
+    it.effect(`repairs nested members in a nullable object ${JSON.stringify(nullable)}`, () =>
+      Effect.gen(function* () {
+        const input = { nested: { count: "2" } }
+        expect((yield* run(input, object({ nested: nullable }))).input).toEqual({ nested: { count: 2 } })
+        expect(input).toEqual({ nested: { count: "2" } })
+        const valid = { nested: { count: 2 } }
+        expect((yield* run(valid, object({ nested: nullable }))).input).toBe(valid)
+        const empty = { nested: null }
+        expect((yield* run(empty, object({ nested: nullable }))).input).toBe(empty)
+      }),
+    )
+  }
+
   it.effect("repairs unique nullable alternatives while preserving accepted union values", () =>
     Effect.gen(function* () {
       const input = {

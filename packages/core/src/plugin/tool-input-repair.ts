@@ -60,7 +60,7 @@ function repair(value: unknown, schema: JsonSchema.JsonSchema, root: JsonSchema.
 
   if (Array.isArray(schema.type)) {
     if (value === null && schema.type.includes("null")) return value
-    if (schema.type.includes(typeof value)) return value
+    if (schema.type.includes(typeof value) && typeof value !== "object") return value
     const types = schema.type.filter((type) => type !== "null")
     return types.length === 1 ? repair(value, { ...schema, type: types[0] }, root, depth + 1) : value
   }
@@ -69,7 +69,11 @@ function repair(value: unknown, schema: JsonSchema.JsonSchema, root: JsonSchema.
     if (Array.isArray(schema.anyOf) && Array.isArray(schema.oneOf)) return value
     const branches = Array.isArray(schema.anyOf) ? schema.anyOf : schema.oneOf
     if (!Array.isArray(branches) || value === null) return value
-    if (branches.some((branch) => !Predicate.isObject(branch) || branch.type === typeof value)) return value
+    if (
+      branches.some(
+        (branch) => !Predicate.isObject(branch) || (branch.type === typeof value && typeof value !== "object"),
+      )
+    ) return value
     const candidates = branches.filter((branch) => Predicate.isObject(branch) && branch.type !== "null")
     return candidates.length === 1 ? repair(value, candidates[0], root, depth + 1) : value
   }
