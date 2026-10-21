@@ -1341,3 +1341,29 @@ async function expectHeaderClearOfToggle(page: Page, toggle: Locator, progress: 
     await page.screenshot({ clip, style: ".session-review-v2-tabs-bar { visibility: hidden !important; }" }),
   )
 }
+
+test("desktop review comments suggest workspace file mentions", async ({ page }) => {
+  const searches: string[] = []
+  const directory = "C:/OpenCode/ReviewMentions"
+  await openSession(page, {
+    name: "ReviewMentions",
+    vcsDiff: [fileDiff("src/changed.ts")],
+    fileContent: () => ({ type: "text", content: "export const value = 'after'\n" }),
+    findFiles: (input) => {
+      searches.push(input.query)
+      return input.query === "READ" ? [fileNode(directory, "README.md")] : []
+    },
+  })
+
+  await page.getByRole("button", { name: "Toggle review" }).click()
+  const panel = page.locator("#review-panel")
+  await panel.locator('[data-line-type="change-addition"] [data-diff-span]').click()
+  const editor = panel.locator('[data-slot="line-comment-v2-textarea"]')
+  await expect(editor).toBeVisible()
+  await editor.pressSequentially("@READ")
+  const choice = panel.locator('[data-slot="line-comment-v2-mention-item"]').filter({ hasText: "README.md" })
+  await expect(choice).toBeVisible()
+  await expect.poll(() => searches.includes("READ")).toBe(true)
+  await choice.click()
+  await expect(editor).toHaveValue("@README.md ")
+})

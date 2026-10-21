@@ -11,6 +11,7 @@ import {
 } from "@opencode/session-ui/v2/session-review-v2"
 import { SessionReviewFilePreviewV2 } from "@opencode/session-ui/v2/session-review-file-preview-v2"
 import { DiffChanges } from "@opencode/ui/diff-changes"
+import type { LineCommentEditorMention } from "@opencode/ui/line-comment"
 import type {
   SessionReviewComment,
   SessionReviewCommentActions,
@@ -63,6 +64,7 @@ type ReviewPanelProps = {
   onLineCommentUpdate?: (comment: SessionReviewCommentUpdate) => void
   onLineCommentDelete?: (comment: SessionReviewCommentDelete) => void
   lineCommentActions?: SessionReviewCommentActions
+  lineCommentMention?: LineCommentEditorMention
   comments?: SessionReviewComment[]
   focusedComment?: SessionReviewFocus | null
   onFocusedCommentChange?: (focus: SessionReviewFocus | null) => void
@@ -106,6 +108,7 @@ export default function ReviewPanelContent(props: {
       onLineCommentUpdate={props.review.comments.update}
       onLineCommentDelete={props.review.comments.remove}
       lineCommentActions={props.review.comments.actions()}
+      lineCommentMention={{ items: props.review.comments.mentions }}
       comments={props.review.comments.all()}
       focusedComment={props.review.comments.focus()}
       onFocusedCommentChange={props.review.comments.changeFocus}
@@ -239,6 +242,7 @@ function ReviewPanel(props: ReviewPanelProps) {
                   onLineCommentUpdate={props.onLineCommentUpdate}
                   onLineCommentDelete={props.onLineCommentDelete}
                   lineCommentActions={props.lineCommentActions}
+                  lineCommentMention={props.lineCommentMention}
                   comments={props.comments}
                   focusedComment={props.focusedComment}
                   onFocusedCommentChange={props.onFocusedCommentChange}

@@ -24,7 +24,7 @@ import type {
 import type { SessionReviewExpandMode } from "./session-review-v2"
 import { createLineCommentControllerV2 } from "./line-comment-annotations-v2"
 import { shouldVirtualizeReviewDiff } from "./session-review-file-preview-v2-virtualize"
-import { LineCommentOverflowIcon } from "@opencode/ui/line-comment"
+import { LineCommentOverflowIcon, type LineCommentEditorMention } from "@opencode/ui/line-comment"
 import { Menu } from "@opencode/ui/menu"
 import "./session-review-v2.css"
 
@@ -40,6 +40,7 @@ export type SessionReviewFilePreviewV2Props = {
   onLineCommentUpdate?: (comment: SessionReviewCommentUpdate) => void
   onLineCommentDelete?: (comment: SessionReviewCommentDelete) => void
   lineCommentActions?: SessionReviewCommentActions
+  lineCommentMention?: LineCommentEditorMention
   comments?: SessionReviewComment[]
   focusedComment?: SessionReviewFocus | null
   onFocusedCommentChange?: (focus: SessionReviewFocus | null) => void
@@ -128,6 +129,7 @@ export function SessionReviewFilePreviewV2(props: SessionReviewFilePreviewV2Prop
     comments,
     label: i18n.t("ui.lineComment.submit"),
     draftKey: () => props.file,
+    mention: props.lineCommentMention,
     state: {
       opened: () => store.opened,
       setOpened: (id) => setStore("opened", id),
