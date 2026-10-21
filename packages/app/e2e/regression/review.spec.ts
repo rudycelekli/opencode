@@ -1345,6 +1345,7 @@ async function expectHeaderClearOfToggle(page: Page, toggle: Locator, progress: 
 test("desktop review comments suggest workspace file mentions", async ({ page }) => {
   const searches: string[] = []
   const directory = "C:/OpenCode/ReviewMentions"
+
   await openSession(page, {
     name: "ReviewMentions",
     vcsDiff: [fileDiff("src/changed.ts")],
