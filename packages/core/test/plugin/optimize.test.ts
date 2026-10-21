@@ -220,6 +220,28 @@ describe("OptimizePlugin", () => {
     }),
   )
 
+  for (const name of ["Muse Ordinary", "Muse $$", "Muse $&", "Muse $`", "Muse $'"]) {
+    it.effect(`preserves literal prompt substitutions for model name ${name}`, () =>
+      Effect.gen(function* () {
+        const catalog = yield* Provider.Service
+        const hooks = yield* PluginHooks.Service
+        const pluginHost = yield* makeHost
+        yield* catalog.transform((editor) =>
+          editor.models.update(Provider.ID.make("test"), Model.ID.make("meta/muse-literal"), (model) => {
+            model.name = name
+          }),
+        )
+        yield* OptimizePlugin.MetaPlugin.effect(pluginHost)
+        for (const eventName of ["context", "compaction", "generate"] as const) {
+          const event = context("meta/muse-literal")
+          yield* hooks.trigger("session", eventName, event)
+          expect(event.system[0]?.text).toContain(name)
+          expect(event.system[0]?.text).not.toContain("{{MODEL_NAME}}")
+        }
+      }),
+    )
+  }
+
   it.effect("uses catalog names in Meta prompts for Muse model IDs", () =>
     Effect.gen(function* () {
       const catalog = yield* Provider.Service
