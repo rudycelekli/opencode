@@ -247,7 +247,8 @@ export function make(input: {
         const target = yield* input.fs.resolve(manifest)
         for (const item of metadata.value.packages) {
           if ((yield* input.fs.resolve(item.manifest_path)) !== target) continue
-          return [command[0], "--edition", item.edition, ...command.slice(1)]
+          const entry = item.targets.find((target) => path.resolve(target.src_path) === path.resolve(filepath))
+          return [command[0], "--edition", entry?.edition ?? item.edition, ...command.slice(1)]
         }
         return command
       }).pipe(Effect.orElseSucceed(() => command)),
@@ -337,6 +338,12 @@ const decodeCargoMetadata = Schema.decodeUnknownOption(
         Schema.Struct({
           manifest_path: Schema.String,
           edition: Schema.Literals(["2015", "2018", "2021", "2024"]),
+          targets: Schema.Array(
+            Schema.Struct({
+              src_path: Schema.String,
+              edition: Schema.Literals(["2015", "2018", "2021", "2024"]),
+            }),
+          ),
         }),
       ),
     }),

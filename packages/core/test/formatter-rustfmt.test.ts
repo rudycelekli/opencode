@@ -26,7 +26,7 @@ const it = testEffect(
 // Optional local native integration; the qualification job requires both tools
 // and therefore cannot treat their absence as a successful regression oracle.
 describe.skipIf(!Bun.which("cargo") || !Bun.which("rustfmt"))("native Rustfmt discovery", () => {
-  for (const mode of ["manifest", "workspace", "standalone"] as const) {
+  for (const mode of ["manifest", "workspace", "target", "standalone"] as const) {
     it.live(`resolves the Rust language edition for each requested file ${mode}`, () =>
       Effect.gen(function* () {
         const root = (yield* tmpdirScoped()).path
@@ -46,7 +46,11 @@ describe.skipIf(!Bun.which("cargo") || !Bun.which("rustfmt"))("native Rustfmt di
             await fs.writeFile(
               path.join(modern, "Cargo.toml"),
               '[package]\nname = "modern"\nversion = "0.1.0"\n' +
-                (mode === "workspace" ? "edition.workspace = true\n" : 'edition = "2021"\n'),
+                (mode === "workspace"
+                  ? "edition.workspace = true\n"
+                  : mode === "target"
+                    ? 'edition = "2015"\n[lib]\nedition = "2021"\n'
+                    : 'edition = "2021"\n'),
             )
             // Cargo language-edition precedence also applies with an explicit
             // rustfmt edition. Other rustfmt options must remain in effect.
