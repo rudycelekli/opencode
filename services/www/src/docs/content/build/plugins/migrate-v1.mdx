@@ -123,8 +123,8 @@ export default Plugin.define({
   id: "company.guard",
   async setup(ctx) {
     await ctx.tool.hook("execute.before", (event) => {
-      const input = event.input as { filePath?: string }
-      if (event.tool === "read" && input.filePath?.includes(".env")) {
+      const input = event.input as { path?: string }
+      if (event.tool === "read" && input.path?.includes(".env")) {
         throw new Error("Do not read .env files")
       }
     })
@@ -135,6 +135,8 @@ export default Plugin.define({
   },
 })
 ```
+
+The V2 built-in `read` tool uses `path`; `filePath` in the V1 example is a legacy argument name.
 
 Registrations stay active for the plugin's lifetime and are disposed when it unloads. Retain the returned registration
 only when the plugin needs to remove that particular hook or transform earlier with `registration.dispose()`.
